@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "582133156931",
+    "project_id": "mahallu-85224",
+    "storage_bucket": "mahallu-85224.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:582133156931:android:9fd2e0e83534c9c1e558f6",
+        "android_client_info": {
+          "package_name": "com.nextgenapps.Mahallu"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAxII6HJGnTx8LWg2REVq6NjZgg6tKvPGc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
