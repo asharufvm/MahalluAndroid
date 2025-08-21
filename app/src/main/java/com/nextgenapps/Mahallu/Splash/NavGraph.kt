@@ -1,6 +1,7 @@
 package com.nextgenapps.Mahallu.Splash
 
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
@@ -17,7 +18,9 @@ import com.nextgenapps.Mahallu.MyReceipts.MyReceiptsScreen
 
 import com.nextgenapps.Mahallu.DonateNow.DonateNowScreen
 import com.nextgenapps.Mahallu.MyAccount.MyAccountScreen
-import com.nextgenapps.Mahallu.Profile.ProfileScreen
+//import com.nextgenapps.Mahallu.Profile.EditProfileScreen
+import com.nextgenapps.Mahallu.Profile.EditProfileViewModel
+import com.nextgenapps.Mahallu.Profile.MyProfileScreen
 
 @Composable
 fun AppNavHost() {
@@ -54,6 +57,7 @@ fun AppNavHost() {
         composable("home") {
             HomeScreen()
         }
+
     }
 }
 

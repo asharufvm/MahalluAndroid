@@ -1,5 +1,6 @@
 package com.nextgenapps.Mahallu.DonateNow
 
+import android.app.Application
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,9 @@ import androidx.navigation.NavHostController
 
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -28,36 +32,74 @@ import androidx.compose.runtime.*
 //import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+//import androidx.compose.ui.window.application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 import androidx.lifecycle.ViewModel
+import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.functions.ktx.functions
 import com.google.firebase.ktx.Firebase
+import com.nextgenapps.Mahallu.Profile.SessionManager
 import com.nextgenapps.Mahallu.utils.CommonFunctions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
-import javax.inject.Inject
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DonateNowScreen(viewModel: DonateNowViewModel = viewModel()) {
+fun DonateNowScreen(
+    viewModel: DonateNowViewModel = viewModel()
+) {
     val context = LocalContext.current
     val accounts by viewModel.accounts.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
 
+    // ✅ SnackbarHostState (replaces rememberScaffoldState)
+    val snackbarHostState = remember { SnackbarHostState() }
+
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var amount by remember { mutableStateOf("") }
 
+    // Collect error messages
+    val errorMessage by viewModel.errorMessage.collectAsState()
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearError()
+        }
+    }
+
+    // Collect payment url and open in Chrome Custom Tab
+    val paymentUrl by viewModel.paymentUrl.collectAsState()
+    LaunchedEffect(paymentUrl) {
+        paymentUrl?.let { url ->
+            try {
+                val customTabsIntent = CustomTabsIntent.Builder()
+                    .setShowTitle(true)
+                    .setUrlBarHidingEnabled(false)
+                    .setShareState(CustomTabsIntent.SHARE_STATE_OFF)
+                    .build()
+
+                customTabsIntent.launchUrl(context, Uri.parse(url))
+            } catch (e: Exception) {
+                // fallback to normal browser if Custom Tabs not available
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                context.startActivity(intent)
+            }
+
+            viewModel.clearPaymentUrl()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Donate Now") })
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -80,7 +122,11 @@ fun DonateNowScreen(viewModel: DonateNowViewModel = viewModel()) {
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Select Account") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.accountDropdownExpanded) },
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(
+                            expanded = viewModel.accountDropdownExpanded
+                        )
+                    },
                     modifier = Modifier.menuAnchor().fillMaxWidth()
                 )
                 ExposedDropdownMenu(
@@ -109,7 +155,11 @@ fun DonateNowScreen(viewModel: DonateNowViewModel = viewModel()) {
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Select Category") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.categoryDropdownExpanded) },
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(
+                            expanded = viewModel.categoryDropdownExpanded
+                        )
+                    },
                     modifier = Modifier.menuAnchor().fillMaxWidth()
                 )
                 ExposedDropdownMenu(
@@ -140,7 +190,11 @@ fun DonateNowScreen(viewModel: DonateNowViewModel = viewModel()) {
             // Pay Now Button
             Button(
                 onClick = {
-                    // TODO: handle pay now
+                    viewModel.donateNow(
+                        accountName = selectedAccount?.name ?: "",
+                        categoryName = selectedCategory?.name ?: "",
+                        amount = amount
+                    )
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -155,15 +209,11 @@ fun DonateNowScreen(viewModel: DonateNowViewModel = viewModel()) {
 
 
 
-//package com.example.donationapp.ui.donate
 
+// -------------------- DonateNowViewModel.kt --------------------
 
+class DonateNowViewModel(application: Application) : AndroidViewModel(application) {
 
-
-@HiltViewModel
-class DonateNowViewModel @Inject constructor(
-    @ApplicationContext private val context: Context
-) : ViewModel() {
     private val _accounts = MutableStateFlow<List<Account>>(emptyList())
     val accounts: StateFlow<List<Account>> = _accounts
 
@@ -172,6 +222,12 @@ class DonateNowViewModel @Inject constructor(
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage
+
+    private val _paymentUrl = MutableStateFlow<String?>(null)
+    val paymentUrl: StateFlow<String?> = _paymentUrl
 
     var accountDropdownExpanded by mutableStateOf(false)
     var categoryDropdownExpanded by mutableStateOf(false)
@@ -183,7 +239,9 @@ class DonateNowViewModel @Inject constructor(
 
     private fun fetchAccounts() {
         _isLoading.value = true
-        val path = CommonFunctions.getOrganizationPath(context, "Accounts")
+        val organizationId = getOrganizationId()
+        val path = "/organizations/$organizationId/Accounts"
+
         Firebase.firestore.collection(path)
             .whereEqualTo("isAvailableToPublic", true)
             .get()
@@ -199,7 +257,9 @@ class DonateNowViewModel @Inject constructor(
 
     private fun fetchCategories() {
         _isLoading.value = true
-        val path = CommonFunctions.getOrganizationPath(context, "Categories")
+        val organizationId = getOrganizationId()
+        val path = "/organizations/$organizationId/Categories"
+
         Firebase.firestore.collection(path)
             .whereEqualTo("isAvailableToPublic", true)
             .get()
@@ -212,15 +272,69 @@ class DonateNowViewModel @Inject constructor(
                 _isLoading.value = false
             }
     }
+
+    private fun getOrganizationId(): String? {
+        return SessionManager.organizationId
+    }
+
+    private fun getPhoneNumber(): String? {
+        return Firebase.auth.currentUser?.phoneNumber
+    }
+
+    fun donateNow(accountName: String, categoryName: String, amount: String) {
+        val organizationId = getOrganizationId()
+        val phoneNumber = getPhoneNumber()
+        val doubleAmount = amount.toDoubleOrNull() ?: 0.0
+
+        if (organizationId.isNullOrBlank() || phoneNumber.isNullOrBlank()) {
+            _errorMessage.value = "Missing organizationId or phone number"
+            return
+        }
+
+        _isLoading.value = true
+
+        val params = hashMapOf(
+            "organizationId" to organizationId,
+            "accountName" to accountName,
+            "categoryName" to categoryName,
+            "phoneNumber" to phoneNumber,
+            "amount" to doubleAmount,
+            "flowType" to 1  // 1 = Donations, 2 = Dues
+        )
+
+        val functions = Firebase.functions("asia-south1")
+        functions
+            .getHttpsCallable("donateNow")
+            .call(params)
+            .addOnCompleteListener { task ->
+                _isLoading.value = false
+
+                if (!task.isSuccessful) {
+                    _errorMessage.value = task.exception?.localizedMessage ?: "Something went wrong"
+                    return@addOnCompleteListener
+                }
+
+                val data = task.result?.data as? Map<*, *>
+                val url = data?.get("payment_link_url") as? String
+                if (url != null) {
+                    _paymentUrl.value = url
+                } else {
+                    _errorMessage.value = "Invalid response from server"
+                }
+            }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
+    }
+
+    fun clearPaymentUrl() {
+        _paymentUrl.value = null
+    }
 }
 
 
 
-
-
-
-
-//package com.example.donationapp.model
 
 data class Account(
     val name: String = "",

@@ -63,15 +63,17 @@ class OTPViewModel : ViewModel() {
                         .addOnSuccessListener { result ->
                             isVerifying = false
                             if (!result.isEmpty) {
-                                val userDoc = result.documents.first()
+                                /*val userDoc = result.documents.first()
                                 val organizationId = userDoc.getString("organizationId") ?: ""
                                 val role = userDoc.getString("role") ?: ""
+                                val phoneNumber = userDoc.getString("phoneNumber") ?: ""
 
-                                val prefs = context.getSharedPreferences("MahalluPrefs", Context.MODE_PRIVATE)
+                                val prefs = context.getSharedPreferences("MyPrefs", Context.MODE_PRIVATE)
                                 prefs.edit()
                                     .putString("organizationId", organizationId)
                                     .putString("role", role)
-                                    .apply()
+                                    .putString("phoneNumber", phoneNumber)
+                                    .apply()*/
 
                                 navController.navigate("home") {
                                     popUpTo(0) { inclusive = true }
@@ -79,7 +81,7 @@ class OTPViewModel : ViewModel() {
                             } else {
                                 Toast.makeText(
                                     context,
-                                    "Mobile number not registered with Mahallu, please contact Admin",
+                                    "Mobile number not registered with Mahallu, please contact Mahallu Admin",
                                     Toast.LENGTH_LONG
                                 ).show()
                                 auth.signOut()

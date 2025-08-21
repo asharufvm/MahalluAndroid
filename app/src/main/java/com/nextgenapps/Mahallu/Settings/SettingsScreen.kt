@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Logout
 import com.nextgenapps.Mahallu.MainActivity
+import com.nextgenapps.Mahallu.Profile.SessionManager
 
 @Composable
 fun SettingsScreen(navController: NavController) {
@@ -88,11 +89,8 @@ fun logoutAndRestart(context: Context) {
 }
 
 fun clearUserSession(context: Context) {
-    val sharedPreferences = context.getSharedPreferences("MahalluPrefs", Context.MODE_PRIVATE)
-    sharedPreferences.edit()
-        .remove("role")
-        .remove("organizationId")
-        .apply()
+    SessionManager.organizationId = ""
+    SessionManager.role = ""
 }
 
 

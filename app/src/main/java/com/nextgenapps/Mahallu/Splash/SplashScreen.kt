@@ -22,6 +22,8 @@ import android.os.Handler
 import android.os.Looper
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 
 
 @Composable
@@ -49,9 +51,18 @@ fun SplashScreen(navController: NavController) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("🕌 Mahallu App", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                text = "🕌 Mahallu App",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    color = Color(0xFF2E7D32), // A nice green shade
+                    fontSize = 32.sp,           // Custom font size
+                    fontWeight = FontWeight.Bold
+                )
+            )
             Spacer(modifier = Modifier.height(12.dp))
-            CircularProgressIndicator()
+            CircularProgressIndicator(
+                color = Color(0xFF2E7D32) // Green shade
+            )
         }
     }
 }

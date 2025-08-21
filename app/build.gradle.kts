@@ -2,8 +2,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.hilt) // ✅ Add this line
-    kotlin("kapt") // ✅ Required for annotation processing
 }
 
 android {
@@ -43,8 +41,24 @@ android {
 
 dependencies {
 
-    implementation("com.google.dagger:hilt-android:2.48")
-    kapt("com.google.dagger:hilt-compiler:2.48")
+    implementation("androidx.browser:browser:1.7.0")
+
+    implementation("com.google.firebase:firebase-functions-ktx")
+
+    // Add this line for the App Check Play Integrity provider
+    implementation("com.google.firebase:firebase-appcheck-playintegrity")
+
+    // Also make sure you have the Firebase BoM for consistent versions
+    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
+    implementation("com.google.firebase:firebase-appcheck")
+
+    // Add these dependencies to your app's build.gradle file
+    implementation("com.google.firebase:firebase-appcheck-playintegrity")
+
+    implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // Firebase Storage
+    implementation("com.google.firebase:firebase-storage-ktx:21.0.0")
 
     //implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
