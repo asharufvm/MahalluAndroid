@@ -24,7 +24,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -57,7 +59,6 @@ fun DonateNowScreen(
     val categories by viewModel.categories.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
 
-    // ✅ SnackbarHostState (replaces rememberScaffoldState)
     val snackbarHostState = remember { SnackbarHostState() }
 
     var selectedAccount by remember { mutableStateOf<Account?>(null) }
@@ -86,126 +87,150 @@ fun DonateNowScreen(
 
                 customTabsIntent.launchUrl(context, Uri.parse(url))
             } catch (e: Exception) {
-                // fallback to normal browser if Custom Tabs not available
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                 context.startActivity(intent)
             }
-
             viewModel.clearPaymentUrl()
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("Donate Now") })
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .padding(16.dp)
-                .fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            if (isLoading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
+    // ✅ No inner Scaffold
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+    ) {
+        // Top Bar
+        TopAppBar(title = { Text("Donate Now") })
 
-            // Account Dropdown
-            ExposedDropdownMenuBox(
-                expanded = viewModel.accountDropdownExpanded,
-                onExpandedChange = { viewModel.accountDropdownExpanded = !viewModel.accountDropdownExpanded }
-            ) {
-                TextField(
-                    value = selectedAccount?.name ?: "",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Select Account") },
-                    trailingIcon = {
-                        ExposedDropdownMenuDefaults.TrailingIcon(
-                            expanded = viewModel.accountDropdownExpanded
-                        )
-                    },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = viewModel.accountDropdownExpanded,
-                    onDismissRequest = { viewModel.accountDropdownExpanded = false }
-                ) {
-                    accounts.forEach { account ->
-                        DropdownMenuItem(
-                            text = { Text(account.name) },
-                            onClick = {
-                                selectedAccount = account
-                                viewModel.accountDropdownExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-
-            // Category Dropdown
-            ExposedDropdownMenuBox(
-                expanded = viewModel.categoryDropdownExpanded,
-                onExpandedChange = { viewModel.categoryDropdownExpanded = !viewModel.categoryDropdownExpanded }
-            ) {
-                TextField(
-                    value = selectedCategory?.name ?: "",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Select Category") },
-                    trailingIcon = {
-                        ExposedDropdownMenuDefaults.TrailingIcon(
-                            expanded = viewModel.categoryDropdownExpanded
-                        )
-                    },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = viewModel.categoryDropdownExpanded,
-                    onDismissRequest = { viewModel.categoryDropdownExpanded = false }
-                ) {
-                    categories.forEach { category ->
-                        DropdownMenuItem(
-                            text = { Text(category.name) },
-                            onClick = {
-                                selectedCategory = category
-                                viewModel.categoryDropdownExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-
-            // Amount Text Field
-            OutlinedTextField(
-                value = amount,
-                onValueChange = { amount = it },
-                label = { Text("Enter Amount") },
-                keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            // Pay Now Button
-            Button(
-                onClick = {
-                    viewModel.donateNow(
-                        accountName = selectedAccount?.name ?: "",
-                        categoryName = selectedCategory?.name ?: "",
-                        amount = amount
-                    )
-                },
+        // Content
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                enabled = selectedAccount != null && selectedCategory != null && amount.isNotBlank()
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(bottom = 80.dp), // ✅ scroll under tab bar
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text("Pay Now")
+                if (isLoading) {
+                    item {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                }
+
+                // Account Dropdown
+                item {
+                    ExposedDropdownMenuBox(
+                        expanded = viewModel.accountDropdownExpanded,
+                        onExpandedChange = {
+                            viewModel.accountDropdownExpanded = !viewModel.accountDropdownExpanded
+                        }
+                    ) {
+                        TextField(
+                            value = selectedAccount?.name ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Select Account") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(
+                                    expanded = viewModel.accountDropdownExpanded
+                                )
+                            },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = viewModel.accountDropdownExpanded,
+                            onDismissRequest = { viewModel.accountDropdownExpanded = false }
+                        ) {
+                            accounts.forEach { account ->
+                                DropdownMenuItem(
+                                    text = { Text(account.name) },
+                                    onClick = {
+                                        selectedAccount = account
+                                        viewModel.accountDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Category Dropdown
+                item {
+                    ExposedDropdownMenuBox(
+                        expanded = viewModel.categoryDropdownExpanded,
+                        onExpandedChange = {
+                            viewModel.categoryDropdownExpanded =
+                                !viewModel.categoryDropdownExpanded
+                        }
+                    ) {
+                        TextField(
+                            value = selectedCategory?.name ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Select Category") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(
+                                    expanded = viewModel.categoryDropdownExpanded
+                                )
+                            },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = viewModel.categoryDropdownExpanded,
+                            onDismissRequest = { viewModel.categoryDropdownExpanded = false }
+                        ) {
+                            categories.forEach { category ->
+                                DropdownMenuItem(
+                                    text = { Text(category.name) },
+                                    onClick = {
+                                        selectedCategory = category
+                                        viewModel.categoryDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Amount Text Field
+                item {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { amount = it },
+                        label = { Text("Enter Amount") },
+                        keyboardOptions = KeyboardOptions.Default.copy(
+                            keyboardType = KeyboardType.Number
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Pay Now Button
+                item {
+                    Button(
+                        onClick = {
+                            viewModel.donateNow(
+                                accountName = selectedAccount?.name ?: "",
+                                categoryName = selectedCategory?.name ?: "",
+                                amount = amount
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        enabled = selectedAccount != null &&
+                                selectedCategory != null &&
+                                amount.isNotBlank()
+                    ) {
+                        Text("Pay Now")
+                    }
+                }
             }
         }
     }
 }
+
 
 
 

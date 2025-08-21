@@ -270,7 +270,8 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
 @Composable
 fun MyProfileScreen(
     navController: NavController,
-    userViewModel: EditProfileViewModel = viewModel()
+    userViewModel: EditProfileViewModel = viewModel(),
+    modifier: Modifier = Modifier
 ) {
     val userProfile by userViewModel.userProfile.collectAsState()
     val isLoading by userViewModel.loading.collectAsState()
@@ -278,153 +279,129 @@ fun MyProfileScreen(
 
     val isOverallLoading = isLoading || organization == null
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("My Profile") },
-                actions = {
-                    IconButton(onClick = {
-                        navController.navigate("edit_profile")
-                    }) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit Profile")
-                    }
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.White)
+    ) {
+        TopAppBar(
+            title = { Text("My Profile") },
+            actions = {
+                IconButton(onClick = {
+                    navController.navigate("edit_profile")
+                }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Profile")
                 }
-            )
-        }
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            if (isOverallLoading) {
-                // Single centered loader
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                ) {
-                    // ✅ Organization Card from ViewModel
-                    organization?.let { org ->
-                        item {
-                            Card(
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 16.dp),
-                                elevation = CardDefaults.cardElevation(4.dp)
-                            ) {
-                                Column {
-                                    Text(
-                                        buildAnnotatedString {
-                                            withStyle(style = ParagraphStyle(lineHeight = 40.sp)) {
-                                                withStyle(
-                                                    style = SpanStyle(
-                                                        color = Color.Gray,
-                                                        fontSize = 18.sp,
-                                                        fontWeight = FontWeight.Normal
-                                                    )
-                                                ) {
-                                                    append("Welcome to\n")
-                                                }
-                                                withStyle(
-                                                    style = SpanStyle(
-                                                        color = Color.Black,
-                                                        fontSize = 32.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                ) {
-                                                    append(org.name ?: "")
-                                                }
-                                            }
-                                        },
-                                        modifier = Modifier.padding(16.dp)
-                                    )
+            }
+        )
 
-                                    AsyncImage(
-                                        model = org.image,
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(180.dp),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                }
-                            }
-                        }
-                    }
+        if (isOverallLoading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 16.dp,
+                    bottom = 80.dp // ✅ enough space so last item is not hidden under tab bar
+                )
+            ) {
+                // Organization Card
+                organization?.let { org ->
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp),
+                            elevation = CardDefaults.cardElevation(4.dp)
+                        ) {
+                            Column {
+                                Text(
+                                    buildAnnotatedString {
+                                        withStyle(style = ParagraphStyle(lineHeight = 40.sp)) {
+                                            withStyle(
+                                                style = SpanStyle(
+                                                    color = Color.Gray,
+                                                    fontSize = 18.sp,
+                                                    fontWeight = FontWeight.Normal
+                                                )
+                                            ) { append("Welcome to\n") }
+                                            withStyle(
+                                                style = SpanStyle(
+                                                    color = Color.Black,
+                                                    fontSize = 32.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            ) { append(org.name ?: "") }
+                                        }
+                                    },
+                                    modifier = Modifier.padding(16.dp)
+                                )
 
-                    // ✅ User Profile Card stays the same
-                    userProfile?.let { profile ->
-                        item {
-                            Card(
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth(),
-                                elevation = CardDefaults.cardElevation(4.dp)
-                            ) {
-                                Box(
+                                AsyncImage(
+                                    model = org.image,
+                                    contentDescription = null,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center
-                                    ) {
-                                        AsyncImage(
-                                            model = profile.profileImageURL.takeIf { !it.isNullOrEmpty() }
-                                                ?: R.drawable.placeholder_profile,
-                                            contentDescription = "User Profile Image",
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier
-                                                .size(100.dp)
-                                                .clip(CircleShape)
-                                        )
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        Text("Name: ${profile.name ?: ""}", fontWeight = FontWeight.Bold, fontSize = 26.sp)
-                                        Text("Father's Name: ${profile.fatherName ?: ""}", fontWeight = FontWeight.Bold)
-                                        Text("House Name: ${profile.houseName ?: ""}", fontWeight = FontWeight.Bold)
-                                        Text("Address: ${profile.address ?: ""}", fontWeight = FontWeight.Bold)
-                                        Text("Phone: ${profile.phoneNumber ?: ""}", fontWeight = FontWeight.Bold)
-                                        Text("Class: ${profile.className ?: ""}", fontWeight = FontWeight.Bold)
-                                        Text("Role: ${profile.role ?: ""}", fontWeight = FontWeight.Bold)
-                                    }
-                                }
+                                        .height(180.dp),
+                                    contentScale = ContentScale.Crop
+                                )
                             }
                         }
                     }
                 }
+
+                // User Profile Card
+                // User Profile Card
+                userProfile?.let { profile ->
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            elevation = CardDefaults.cardElevation(4.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()  // ✅ make column take full width of card
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally, // ✅ center contents
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                AsyncImage(
+                                    model = profile.profileImageURL.takeIf { !it.isNullOrEmpty() }
+                                        ?: R.drawable.placeholder_profile,
+                                    contentDescription = "User Profile Image",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(100.dp)
+                                        .clip(CircleShape)
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Text("Name: ${profile.name ?: ""}", fontWeight = FontWeight.Bold, fontSize = 26.sp)
+                                Text("Father's Name: ${profile.fatherName ?: ""}", fontWeight = FontWeight.Bold)
+                                Text("House Name: ${profile.houseName ?: ""}", fontWeight = FontWeight.Bold)
+                                Text("Address: ${profile.address ?: ""}", fontWeight = FontWeight.Bold)
+                                Text("Phone: ${profile.phoneNumber ?: ""}", fontWeight = FontWeight.Bold)
+                                Text("Class: ${profile.className ?: ""}", fontWeight = FontWeight.Bold)
+                                Text("Role: ${profile.role ?: ""}", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
             }
         }
     }
-
-    // Refresh profile after edit
-    LaunchedEffect(navController.currentBackStackEntry) {
-        navController.currentBackStackEntry
-            ?.savedStateHandle
-            ?.getLiveData<Boolean>("profile_updated")
-            ?.observeForever { updated ->
-                if (updated) {
-                    val phoneNumber = userViewModel.getUserMobileNumber()
-                    userViewModel.fetchUserProfile("$phoneNumber")
-                    //userViewModel.fetchOrganization() // ✅ refresh organization too if needed
-
-                    // Fetch organization details too
-                    SessionManager.organizationId?.let { orgId ->
-                        userViewModel.fetchOrganization(orgId)
-                    }
-                }
-            }
-    }
 }
+
+
 
 
 

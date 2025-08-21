@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 //import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Clear
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.ui.text.style.TextAlign
 import com.nextgenapps.Mahallu.MainActivity
 import com.nextgenapps.Mahallu.Profile.SessionManager
 
@@ -38,9 +40,17 @@ fun SettingsScreen(navController: NavController) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(
+                start = 16.dp,
+                end = 16.dp,
+                top = 12.dp // ✅ small top space for consistency
+            )
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Settings",
+            style = MaterialTheme.typography.headlineSmall
+        )
+
         Spacer(modifier = Modifier.height(24.dp))
 
         // My Receipt Option
@@ -78,6 +88,9 @@ fun SettingsScreen(navController: NavController) {
         )
     }
 }
+
+
+
 
 fun logoutAndRestart(context: Context) {
     FirebaseAuth.getInstance().signOut()

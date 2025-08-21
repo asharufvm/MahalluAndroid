@@ -46,7 +46,8 @@ fun HomeScreen() {
     Scaffold(
         bottomBar = {
             NavigationBar {
-                val currentDestination = tabNavController.currentBackStackEntryAsState().value?.destination?.route
+                val currentDestination =
+                    tabNavController.currentBackStackEntryAsState().value?.destination?.route
                 tabs.forEach { tab ->
                     NavigationBarItem(
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
@@ -69,11 +70,18 @@ fun HomeScreen() {
         NavHost(
             navController = tabNavController,
             startDestination = "profile_root",
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding) // ✅ avoid double insets
+                .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)) // ✅ only respect bottom insets
         ) {
-            // Profile
             composable("profile_root") {
-                MyProfileScreen(navController = tabNavController)
+                MyProfileScreen(
+                    navController = tabNavController,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .systemBarsPadding() // ✅ handle status bar if needed
+                )
             }
             composable("edit_profile") {
                 EditProfileScreen(
@@ -88,7 +96,10 @@ fun HomeScreen() {
 
             // Account section
             composable("account_root") {
-                MyAccountScreen(navController = tabNavController)
+                MyAccountScreen(
+                    navController = tabNavController,
+                    //modifier = Modifier.fillMaxSize()
+                )
             }
             composable(
                 "transaction_detail/{transactionId}",
@@ -97,14 +108,15 @@ fun HomeScreen() {
                 val transactionId = backStackEntry.arguments?.getString("transactionId") ?: ""
                 TransactionDetailsScreen(
                     transactionId = transactionId,
-                    navController = tabNavController // Pass the navController here
+                    navController = tabNavController
                 )
             }
 
-
             // Donate
             composable("donate_root") {
-                DonateNowScreen()
+                DonateNowScreen(
+                    //modifier = Modifier.fillMaxSize()
+                )
             }
 
             // Settings section
@@ -119,6 +131,7 @@ fun HomeScreen() {
         }
     }
 }
+
 
 
 

@@ -48,12 +48,14 @@ import kotlinx.coroutines.tasks.await
 
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.ui.platform.LocalContext
 
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.KeyboardType
 
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -177,7 +179,6 @@ class MyAccountViewModel(application: Application) : AndroidViewModel(applicatio
 
 
 // MyAccountScreen.kt
-// MyAccountScreen.kt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyAccountScreen(
@@ -192,13 +193,15 @@ fun MyAccountScreen(
     val paymentUrl by viewModel.paymentUrl.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
-    var editableDue by remember { mutableStateOf(totalDue.toString()) }
+    var editableDue by remember { mutableStateOf("") }
 
     // load dues on first render
     LaunchedEffect(Unit) { viewModel.loadDues() }
 
-    // keep editableDue synced with totalDue
-    LaunchedEffect(totalDue) { editableDue = totalDue.toString() }
+    // keep editableDue synced with totalDue, always 2 decimals
+    LaunchedEffect(totalDue) {
+        editableDue = String.format("%.2f", totalDue)
+    }
 
     // show error snackbar
     LaunchedEffect(errorMessage) {
@@ -226,23 +229,24 @@ fun MyAccountScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("My Account", style = MaterialTheme.typography.titleLarge) }
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            // Transactions list
+    Column(
+        modifier = Modifier.background(Color.White)
+    ) {
+        // ✅ Top bar pinned at top
+        TopAppBar(
+            title = { Text("My Account", style = MaterialTheme.typography.titleLarge) }
+        )
+
+        // ✅ Scrollable content
+        Box(modifier = Modifier.weight(1f)) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = 12.dp,
+                    bottom = 80.dp // enough to scroll under bottom nav
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Top Total Due Card
@@ -265,31 +269,39 @@ fun MyAccountScreen(
                                 )
                             )
                             Spacer(modifier = Modifier.height(8.dp))
+
+                            // ✅ Centered currency + amount group
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.wrapContentWidth(Alignment.CenterHorizontally)
                             ) {
                                 Text("₹", fontSize = 28.sp, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.width(4.dp))
                                 BasicTextField(
                                     value = editableDue,
-                                    onValueChange = {
-                                        if (it.toDoubleOrNull() != null || it.isEmpty()) {
-                                            editableDue = it
+                                    onValueChange = { input ->
+                                        val clean = input.replace("[^\\d.]".toRegex(), "")
+                                        if (clean.toDoubleOrNull() != null || clean.isEmpty()) {
+                                            editableDue = clean
                                         }
                                     },
                                     textStyle = TextStyle(
                                         fontSize = 28.sp,
                                         fontWeight = FontWeight.Bold,
-                                        textAlign = TextAlign.Center
+                                        textAlign = TextAlign.Center // ✅ center text
                                     ),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     modifier = Modifier
-                                        .widthIn(min = 80.dp)
+                                        .widthIn(min = 100.dp)
+                                        .wrapContentWidth(Alignment.CenterHorizontally)
                                         .background(Color.Transparent)
                                 )
                             }
+
                             Divider(modifier = Modifier.padding(top = 4.dp))
                             Spacer(modifier = Modifier.height(12.dp))
+
                             Button(
                                 onClick = {
                                     editableDue.toDoubleOrNull()?.let { amount ->
@@ -355,6 +367,11 @@ fun MyAccountScreen(
         }
     }
 }
+
+
+
+
+
 
 
 
