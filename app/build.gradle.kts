@@ -12,7 +12,7 @@ android {
         applicationId = "com.nextgenapps.Mahallu"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
+        versionCode = 3
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -40,6 +40,15 @@ android {
 }
 
 dependencies {
+
+    implementation("androidx.compose.material3:material3:1.2.0")
+
+    implementation("androidx.compose.material3:material3:1.2.1") // latest stable
+    implementation("androidx.compose.material:material:1.6.1")   // for compatibility
+
+    implementation("androidx.compose.material3:material3:1.3.0")
+
+    implementation("com.google.accompanist:accompanist-swiperefresh:0.30.1")
 
     implementation("androidx.browser:browser:1.7.0")
 

@@ -10,6 +10,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
 
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
@@ -34,7 +36,11 @@ import com.nextgenapps.Mahallu.Profile.EditProfileScreen
 
 @Composable
 fun HomeScreen() {
-    val tabNavController = rememberNavController()
+    // Main NavControllers per tab
+    val profileNavController = rememberNavController()
+    val accountNavController = rememberNavController()
+    val donateNavController = rememberNavController()
+    val settingsNavController = rememberNavController()
 
     val tabs = listOf(
         BottomTabItem("Profile", Icons.Default.Person, "profile_root"),
@@ -43,94 +49,116 @@ fun HomeScreen() {
         BottomTabItem("Settings", Icons.Default.Settings, "settings_root")
     )
 
+    // Remember state per tab to avoid reloading
+    val saveableStateHolder = rememberSaveableStateHolder()
+    var selectedTab by rememberSaveable { mutableStateOf("profile_root") }
+
     Scaffold(
         bottomBar = {
             NavigationBar {
-                val currentDestination =
-                    tabNavController.currentBackStackEntryAsState().value?.destination?.route
                 tabs.forEach { tab ->
                     NavigationBarItem(
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
                         label = { Text(tab.label) },
-                        selected = currentDestination == tab.route,
-                        onClick = {
-                            tabNavController.navigate(tab.route) {
-                                popUpTo(tabNavController.graph.startDestinationId) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
+                        selected = selectedTab == tab.route,
+                        onClick = { selectedTab = tab.route }
                     )
                 }
             }
         }
     ) { innerPadding ->
-        NavHost(
-            navController = tabNavController,
-            startDestination = "profile_root",
-            modifier = Modifier
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding) // ✅ avoid double insets
-                .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)) // ✅ only respect bottom insets
+        // Remove innerPadding or handle only bottom
+        Box(modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = innerPadding.calculateBottomPadding())
         ) {
-            composable("profile_root") {
-                MyProfileScreen(
-                    navController = tabNavController,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .systemBarsPadding() // ✅ handle status bar if needed
-                )
-            }
-            composable("edit_profile") {
-                EditProfileScreen(
-                    navController = tabNavController,
-                    onProfileUpdated = {
-                        tabNavController.previousBackStackEntry
-                            ?.savedStateHandle
-                            ?.set("profile_updated", true)
+            tabs.forEach { tab ->
+                val isSelected = tab.route == selectedTab
+                saveableStateHolder.SaveableStateProvider(tab.route) {
+                    if (isSelected) {
+                        when (tab.route) {
+                            "profile_root" -> ProfileTab(profileNavController)
+                            "account_root" -> AccountTab(accountNavController)
+                            "donate_root" -> DonateNowScreen()
+                            "settings_root" -> SettingsTab(settingsNavController)
+                        }
                     }
-                )
-            }
-
-            // Account section
-            composable("account_root") {
-                MyAccountScreen(
-                    navController = tabNavController,
-                    //modifier = Modifier.fillMaxSize()
-                )
-            }
-            composable(
-                "transaction_detail/{transactionId}",
-                arguments = listOf(navArgument("transactionId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val transactionId = backStackEntry.arguments?.getString("transactionId") ?: ""
-                TransactionDetailsScreen(
-                    transactionId = transactionId,
-                    navController = tabNavController
-                )
-            }
-
-            // Donate
-            composable("donate_root") {
-                DonateNowScreen(
-                    //modifier = Modifier.fillMaxSize()
-                )
-            }
-
-            // Settings section
-            navigation(startDestination = "settings", route = "settings_root") {
-                composable("settings") {
-                    SettingsScreen(navController = tabNavController)
-                }
-                composable("my_receipts") {
-                    MyReceiptsScreen(navController = tabNavController)
                 }
             }
         }
     }
+
 }
+
+// ----------------- Profile Tab -----------------
+@Composable
+fun ProfileTab(navController: NavHostController) {
+    NavHost(
+        navController = navController,
+        startDestination = "profile_main",
+        modifier = Modifier.fillMaxSize()
+    ) {
+        composable("profile_main") {
+            MyProfileScreen(navController = navController)
+        }
+        composable("edit_profile") {
+            EditProfileScreen(
+                navController = navController,
+                onProfileUpdated = {
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("profile_updated", true)
+                }
+            )
+        }
+    }
+}
+
+// ----------------- Account Tab -----------------
+@Composable
+fun AccountTab(navController: NavHostController) {
+    NavHost(
+        navController = navController,
+        startDestination = "account_main",
+        modifier = Modifier.fillMaxSize()
+    ) {
+        composable("account_main") {
+            MyAccountScreen(navController = navController)
+        }
+        composable(
+            "transaction_detail/{transactionId}",
+            arguments = listOf(navArgument("transactionId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val transactionId = backStackEntry.arguments?.getString("transactionId") ?: ""
+            TransactionDetailsScreen(
+                transactionId = transactionId,
+                navController = navController
+            )
+        }
+    }
+}
+
+// ----------------- Settings Tab -----------------
+@Composable
+fun SettingsTab(navController: NavHostController) {
+    NavHost(
+        navController = navController,
+        startDestination = "settings_main",
+        modifier = Modifier.fillMaxSize()
+    ) {
+        composable("settings_main") {
+            SettingsScreen(navController = navController)
+        }
+        composable("my_receipts") {
+            MyReceiptsScreen(navController = navController)
+        }
+    }
+}
+
+
+
+
+
 
 
 

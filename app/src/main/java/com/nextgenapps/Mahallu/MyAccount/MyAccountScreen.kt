@@ -52,6 +52,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 
 import androidx.compose.ui.text.TextStyle
@@ -62,8 +63,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.AndroidViewModel
 import androidx.navigation.NavController
+import com.google.accompanist.swiperefresh.SwipeRefresh
+import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.google.firebase.functions.FirebaseFunctions
 import com.nextgenapps.Mahallu.Profile.SessionManager
+
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
+
+
 
 // MyAccountViewModel.kt
 
@@ -193,17 +206,19 @@ fun MyAccountScreen(
     val paymentUrl by viewModel.paymentUrl.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
-    var editableDue by remember { mutableStateOf("") }
+    var editableDue by rememberSaveable { mutableStateOf("") }
 
-    // load dues on first render
-    LaunchedEffect(Unit) { viewModel.loadDues() }
+    // Load dues only if not loaded yet
+    LaunchedEffect(Unit) {
+        if (transactions.isEmpty()) viewModel.loadDues()
+    }
 
-    // keep editableDue synced with totalDue, always 2 decimals
+    // Keep editableDue synced with totalDue
     LaunchedEffect(totalDue) {
         editableDue = String.format("%.2f", totalDue)
     }
 
-    // show error snackbar
+    // Show error snackbar
     LaunchedEffect(errorMessage) {
         errorMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
@@ -211,7 +226,7 @@ fun MyAccountScreen(
         }
     }
 
-    // open payment URL when available
+    // Open payment URL when available
     LaunchedEffect(paymentUrl) {
         paymentUrl?.let { url ->
             try {
@@ -230,122 +245,141 @@ fun MyAccountScreen(
     }
 
     Column(
-        modifier = Modifier.background(Color.White)
+        modifier = Modifier.background(MaterialTheme.colorScheme.background) // ✅ theme aware
     ) {
-        // ✅ Top bar pinned at top
-        TopAppBar(
-            title = { Text("My Account", style = MaterialTheme.typography.titleLarge) }
-        )
+        TopAppBar(title = { Text("My Account", style = MaterialTheme.typography.titleLarge) })
 
-        // ✅ Scrollable content
         Box(modifier = Modifier.weight(1f)) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = 12.dp,
-                    end = 12.dp,
-                    top = 12.dp,
-                    bottom = 80.dp // enough to scroll under bottom nav
-                ),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            // ❌ Removed isRefreshing binding to avoid double loader
+            SwipeRefresh(
+                state = rememberSwipeRefreshState(isRefreshing = false),
+                onRefresh = { viewModel.loadDues() },
+                modifier = Modifier.fillMaxSize()
             ) {
-                // Top Total Due Card
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        elevation = CardDefaults.cardElevation(8.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                "Total Due",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold
-                                )
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // ✅ Centered currency + amount group
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier.wrapContentWidth(Alignment.CenterHorizontally)
-                            ) {
-                                Text("₹", fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                BasicTextField(
-                                    value = editableDue,
-                                    onValueChange = { input ->
-                                        val clean = input.replace("[^\\d.]".toRegex(), "")
-                                        if (clean.toDoubleOrNull() != null || clean.isEmpty()) {
-                                            editableDue = clean
-                                        }
-                                    },
-                                    textStyle = TextStyle(
-                                        fontSize = 28.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        textAlign = TextAlign.Center // ✅ center text
-                                    ),
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    modifier = Modifier
-                                        .widthIn(min = 100.dp)
-                                        .wrapContentWidth(Alignment.CenterHorizontally)
-                                        .background(Color.Transparent)
-                                )
-                            }
-
-                            Divider(modifier = Modifier.padding(top = 4.dp))
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Button(
-                                onClick = {
-                                    editableDue.toDoubleOrNull()?.let { amount ->
-                                        if (amount > 0) viewModel.donateNow(amount)
-                                    }
-                                },
-                                enabled = editableDue.toDoubleOrNull()?.let { it > 0 } == true && !isLoading
-                            ) {
-                                Text("Pay Now")
-                            }
-                        }
-                    }
-                }
-
-                // Transactions grouped by year
-                val grouped = transactions.groupBy { due ->
-                    due.date?.toDate()?.let {
-                        SimpleDateFormat("yyyy", Locale.getDefault()).format(it)
-                    } ?: "Unknown"
-                }
-
-                grouped.forEach { (year, dues) ->
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Total Due Card
                     item {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            elevation = CardDefaults.cardElevation(4.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White)
+                            elevation = CardDefaults.cardElevation(8.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            )
                         ) {
-                            Column {
+                            Column(
+                                modifier = Modifier
+                                    .padding(16.dp)
+                                    .fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
                                 Text(
-                                    text = year,
+                                    "Total Due",
                                     style = MaterialTheme.typography.titleMedium.copy(
                                         fontWeight = FontWeight.Bold
                                     ),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0xFFE0E0E0))
-                                        .padding(8.dp)
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
-                                dues.forEachIndexed { index, transaction ->
-                                    TransactionItem(transaction) {
-                                        navController.navigate("transaction_detail/${transaction.id}")
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier.wrapContentWidth(Alignment.CenterHorizontally)
+                                ) {
+                                    Text(
+                                        "₹",
+                                        fontSize = 28.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    BasicTextField(
+                                        value = editableDue,
+                                        onValueChange = { input ->
+                                            if (totalDue > 0) { // ✅ only allow edit if totalDue > 0
+                                                val clean = input.replace("[^\\d.]".toRegex(), "")
+                                                if (clean.toDoubleOrNull() != null || clean.isEmpty()) {
+                                                    editableDue = clean
+                                                }
+                                            }
+                                        },
+                                        textStyle = TextStyle(
+                                            fontSize = 28.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center,
+                                            color = if (totalDue > 0) MaterialTheme.colorScheme.onSurface
+                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) // visually disabled
+                                        ),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        modifier = Modifier
+                                            .widthIn(min = 100.dp)
+                                            .wrapContentWidth(Alignment.CenterHorizontally)
+                                            .background(Color.Transparent)
+                                    )
+                                }
+
+                                Divider(
+                                    modifier = Modifier.padding(top = 4.dp),
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Button(
+                                    onClick = {
+                                        editableDue.toDoubleOrNull()?.let { amount ->
+                                            if (amount > 0) viewModel.donateNow(amount)
+                                        }
+                                    },
+                                    enabled = editableDue.toDoubleOrNull()?.let { it > 0 } == true && !isLoading
+                                ) {
+                                    Text("Pay Now")
+                                }
+                            }
+                        }
+                    }
+
+                    // Transactions grouped by year
+                    val grouped = transactions.groupBy { due ->
+                        due.date?.toDate()?.let {
+                            SimpleDateFormat("yyyy", Locale.getDefault()).format(it)
+                        } ?: "Unknown"
+                    }
+
+                    grouped.forEach { (year, dues) ->
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                elevation = CardDefaults.cardElevation(4.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                )
+                            ) {
+                                Column {
+                                    Text(
+                                        text = year,
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                            .padding(8.dp)
+                                    )
+                                    dues.forEachIndexed { index, transaction ->
+                                        TransactionItem(transaction) {
+                                            navController.navigate("transaction_detail/${transaction.id}")
+                                        }
+                                        if (index != dues.lastIndex) Divider(
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
                                     }
-                                    if (index != dues.lastIndex) Divider()
                                 }
                             }
                         }
@@ -353,12 +387,12 @@ fun MyAccountScreen(
                 }
             }
 
-            // 🔄 Overlay loader when isLoading = true
+            // ✅ Single overlay loader only
             if (isLoading) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.3f)),
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.3f)),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -367,8 +401,6 @@ fun MyAccountScreen(
         }
     }
 }
-
-
 
 
 
@@ -385,24 +417,44 @@ fun TransactionItem(due: Due, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column {
-            Text(due.category, fontWeight = FontWeight.Bold)
-            Text(due.description, style = MaterialTheme.typography.bodySmall)
+            Text(
+                due.category,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                due.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
+
         Column(horizontalAlignment = Alignment.End) {
+            // ✅ Pick dark green for credit, dark red for debit
+            val amountColor = when (due.type?.lowercase(Locale.ROOT)) {
+                "credit" -> Color(0xFF006400) // Dark Green
+                "debit" -> Color(0xFF8B0000)  // Dark Red
+                else -> MaterialTheme.colorScheme.onSurface
+            }
+
             Text(
                 "₹${String.format("%.2f", due.amount)}",
-                color = if (due.type == "debit") Color.Red else Color(0xFF2E7D32),
+                color = amountColor,
                 fontWeight = FontWeight.Bold
             )
+
             Text(
                 due.date?.toDate()?.let {
                     SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(it)
                 } ?: "",
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 }
+
+
 
 
 
@@ -427,14 +479,17 @@ fun TransactionDetailsScreen(
     navController: NavController,
     viewModel: TransactionDetailsViewModel = viewModel()
 ) {
-    val organizationId = viewModel.getOrganizationId()
+    val organizationId: String = viewModel.getOrganizationId() ?: ""
     val transaction = remember { mutableStateOf<Map<String, Any>?>(null) }
     val isLoading = remember { mutableStateOf(true) }
+
+    val darkGreen = Color(0xFF006400)
+    val darkRed = Color(0xFF8B0000)
 
     LaunchedEffect(transactionId) {
         val db = FirebaseFirestore.getInstance()
         db.collection("organizations")
-            .document("$organizationId")
+            .document(organizationId)
             .collection("Dues")
             .document(transactionId)
             .get()
@@ -469,21 +524,29 @@ fun TransactionDetailsScreen(
                     .padding(paddingValues),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         } else {
             transaction.value?.let { txn ->
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(paddingValues)
-                        .padding(16.dp)
+                        .padding(horizontal = 16.dp)
+                        .padding(top = paddingValues.calculateTopPadding()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     txn.forEach { (key, value) ->
-                        val displayValue = when (value) {
-                            is Timestamp -> {
+                        val displayValue = when {
+                            key.equals("amount", ignoreCase = true) -> {
+                                val amount = value.toString().toDoubleOrNull() ?: 0.0
+                                "₹${String.format("%.2f", amount)}"
+                            }
+                            value is Timestamp -> {
                                 val date = value.toDate()
-                                val formatter = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+                                val formatter = SimpleDateFormat(
+                                    "dd MMM yyyy, hh:mm a",
+                                    Locale.getDefault()
+                                )
                                 formatter.format(date)
                             }
                             else -> value.toString()
@@ -494,22 +557,43 @@ fun TransactionDetailsScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp),
-                                elevation = CardDefaults.cardElevation(2.dp)
+                                elevation = CardDefaults.cardElevation(2.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                )
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
+                                    // Label
                                     Text(
-                                        text = key,
+                                        text = key.replaceFirstChar { it.uppercase() },
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = Color.Gray
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+
+                                    // Value with conditional color
                                     Text(
                                         text = displayValue,
-                                        style = MaterialTheme.typography.bodyLarge
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            fontWeight = if (key.equals("amount", true)) FontWeight.Bold else FontWeight.Normal
+                                        ),
+                                        color = when {
+                                            key.equals("amount", ignoreCase = true) -> {
+                                                when (txn["type"]?.toString()?.lowercase()) {
+                                                    "credit" -> darkGreen
+                                                    "debit" -> darkRed
+                                                    else -> MaterialTheme.colorScheme.onSurface
+                                                }
+                                            }
+                                            else -> MaterialTheme.colorScheme.onSurface
+                                        }
                                     )
                                 }
                             }
                         }
                     }
+
+                    // Spacer at bottom
+                    item { Spacer(modifier = Modifier.height(80.dp)) }
                 }
             } ?: run {
                 Box(
@@ -518,12 +602,21 @@ fun TransactionDetailsScreen(
                         .padding(paddingValues),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Transaction not found.")
+                    Text(
+                        "Transaction not found.",
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         }
     }
 }
+
+
+
+
+
+
 
 
 

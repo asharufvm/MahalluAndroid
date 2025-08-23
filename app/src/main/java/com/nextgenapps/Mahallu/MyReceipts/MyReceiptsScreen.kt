@@ -74,19 +74,34 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.graphics.Paint
+import android.graphics.Typeface
 import android.widget.Toast
 import androidx.compose.ui.Alignment
 import androidx.lifecycle.AndroidViewModel
 import com.google.firebase.firestore.Query
 import com.nextgenapps.Mahallu.Profile.SessionManager
 
-class MyReceiptsViewModel (application: Application) : AndroidViewModel(application) {
+// --- Data Model for Organization ---
+data class Organization(
+    val name: String? = null,
+    val address: String? = null,
+    val registrationNumber: String? = null,
+    val image: String? = null,
+    val createdDate: com.google.firebase.Timestamp? = null
+)
+
+
+// --- ViewModel ---
+class MyReceiptsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _receipts = MutableStateFlow<List<Donation>>(emptyList())
     val receipts: StateFlow<List<Donation>> = _receipts
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _organization = MutableStateFlow<Organization?>(null)
+    val organization: StateFlow<Organization?> = _organization
 
     fun loadReceipts() {
         val currentUserPhone = FirebaseAuth.getInstance().currentUser?.phoneNumber ?: return
@@ -117,50 +132,38 @@ class MyReceiptsViewModel (application: Application) : AndroidViewModel(applicat
             }
     }
 
-    /*fun getOrganizationId(): String? {
-        val prefs = getApplication<Application>()
-            .getSharedPreferences("MyPrefs", Context.MODE_PRIVATE)
-        return prefs.getString("organizationId", null)
-    }*/
+    fun loadOrganization() {
+        val organizationId = getOrganizationId() ?: return
+        FirebaseFirestore.getInstance()
+            .collection("organizations")
+            .document(organizationId)
+            .get()
+            .addOnSuccessListener { doc ->
+                _organization.value = doc.toObject(Organization::class.java)
+            }
+    }
+
     fun getOrganizationId(): String? {
         return SessionManager.organizationId
     }
-
 }
 
 
 
-
-//class MyReceiptsViewModel : ViewModel() {
-//    private val _receipts = MutableStateFlow<List<Donation>>(emptyList())
-//    val receipts: StateFlow<List<Donation>> = _receipts
-//
-//    private val db = FirebaseFirestore.getInstance()
-//    private val auth = FirebaseAuth.getInstance()
-//
-//    fun loadReceipts() {
-//        val phone = auth.currentUser?.phoneNumber ?: return
-//        viewModelScope.launch {
-//            db.collection("/organizations/0W41mQmirmky9H4KBr53/Donations")
-//                .whereEqualTo("phoneNumber", phone)
-//                .get()
-//                .addOnSuccessListener { snapshot ->
-//                    _receipts.value = snapshot.documents.mapNotNull { it.toObject(Donation::class.java) }
-//                }
-//        }
-//    }
-//}
-
-
-
-fun exportAllReceiptsToPdf(context: Context, receipts: List<Donation>) {
+// --- Export All Receipts with Org Header ---
+fun exportAllReceiptsToPdf(context: Context, receipts: List<Donation>, organization: Organization?) {
     if (receipts.isEmpty()) return
 
     val pdfDocument = PdfDocument()
     var pageNumber = 1
-    var y = 20
-    val paint = android.graphics.Paint().apply {
+    var y = 40
+
+    val paint = Paint().apply {
         textSize = 10f
+    }
+    val boldPaint = Paint().apply {
+        textSize = 12f
+        isFakeBoldText = true
     }
 
     fun newPage(): PdfDocument.Page {
@@ -171,19 +174,29 @@ fun exportAllReceiptsToPdf(context: Context, receipts: List<Donation>) {
     var page = newPage()
     var canvas = page.canvas
 
-    fun drawLine(text: String) {
-        if (y > 580) { // End current page and start a new one
+    fun drawLine(text: String, bold: Boolean = false) {
+        if (y > 580) {
             pdfDocument.finishPage(page)
             pageNumber++
-            y = 20
+            y = 40
             page = newPage()
             canvas = page.canvas
         }
-        canvas.drawText(text, 10f, y.toFloat(), paint)
+        canvas.drawText(text, 10f, y.toFloat(), if (bold) boldPaint else paint)
         y += 15
     }
 
-    drawLine("My Receipts")
+    // --- Header ---
+    organization?.let {
+        drawLine(it.name ?: "Organization Name", bold = true)
+        drawLine("Reg No: ${it.registrationNumber ?: "N/A"}", bold = true)
+        drawLine(it.address ?: "Address not available", bold = true)
+        drawLine("================================", bold = true)
+        y += 10
+    }
+
+    // --- Receipts ---
+    drawLine("My Receipts", bold = true)
     drawLine("===============")
 
     receipts.forEachIndexed { index, donation ->
@@ -191,7 +204,7 @@ fun exportAllReceiptsToPdf(context: Context, receipts: List<Donation>) {
             SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(it)
         } ?: "N/A"
 
-        drawLine("${index + 1}. ${donation.accountName ?: "N/A"} - ₹${donation.amount ?: 0}")
+        drawLine("${index + 1}. ${donation.accountName ?: "N/A"} - ₹${donation.amount ?: 0}", bold = true)
         drawLine("   Category: ${donation.categoryName ?: "N/A"}")
         drawLine("   Date: $formattedDate")
         drawLine("   Payment Mode: ${donation.paymentMode ?: "N/A"}")
@@ -200,7 +213,6 @@ fun exportAllReceiptsToPdf(context: Context, receipts: List<Donation>) {
         drawLine("------------------------------")
     }
 
-    // Finish last page
     pdfDocument.finishPage(page)
 
     val fileName = "all_receipts_${System.currentTimeMillis()}.pdf"
@@ -208,7 +220,7 @@ fun exportAllReceiptsToPdf(context: Context, receipts: List<Donation>) {
     pdfDocument.writeTo(FileOutputStream(file))
     pdfDocument.close()
 
-    val uri: Uri = androidx.core.content.FileProvider.getUriForFile(
+    val uri: Uri = FileProvider.getUriForFile(
         context,
         context.packageName + ".provider",
         file
@@ -223,7 +235,7 @@ fun exportAllReceiptsToPdf(context: Context, receipts: List<Donation>) {
 
 
 
-
+// --- Composable Screen ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyReceiptsScreen(
@@ -232,10 +244,12 @@ fun MyReceiptsScreen(
 ) {
     val receipts by viewModel.receipts.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val organization by viewModel.organization.collectAsState()
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         viewModel.loadReceipts()
+        viewModel.loadOrganization()
     }
 
     Scaffold(
@@ -251,7 +265,7 @@ fun MyReceiptsScreen(
                     if (receipts.isNotEmpty()) {
                         IconButton(onClick = {
                             try {
-                                exportAllReceiptsToPdf(context, receipts)
+                                exportAllReceiptsToPdf(context, receipts, organization)
                             } catch (e: Exception) {
                                 Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
@@ -263,52 +277,82 @@ fun MyReceiptsScreen(
             )
         }
     ) { innerPadding ->
-        if (isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
+        when {
+            isLoading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
             }
-        } else {
-            LazyColumn(
-                contentPadding = innerPadding,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(receipts) { receipt ->
-                    val formattedDate = receipt.timestamp?.toDate()?.let {
-                        SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(it)
-                    } ?: "N/A"
+            receipts.isEmpty() -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "You don't have any receipts",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+            else -> {
+                LazyColumn(
+                    contentPadding = innerPadding,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(receipts) { receipt ->
+                        val formattedDate = receipt.timestamp?.toDate()?.let {
+                            SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(it)
+                        } ?: "N/A"
 
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp),
-                        elevation = CardDefaults.cardElevation(4.dp)
-                    ) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text("Account: ${receipt.accountName ?: "N/A"}", style = MaterialTheme.typography.bodyLarge)
-                            Text("Category: ${receipt.categoryName ?: "N/A"}")
-                            Text("Amount: ₹${receipt.amount ?: 0}")
-                            Text("Date: $formattedDate")
-                            Text("Payment Mode: ${receipt.paymentMode ?: "N/A"}")
-                            Text("Collected By: ${receipt.paymentCollectedBy ?: "N/A"}")
-                            Text("Description: ${receipt.descriptionDetails ?: "N/A"}")
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(8.dp),
+                            elevation = CardDefaults.cardElevation(4.dp)
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text("Account: ${receipt.accountName ?: "N/A"}",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text("Category: ${receipt.categoryName ?: "N/A"}",
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Text("Amount: ₹${receipt.amount ?: 0}",
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Text("Date: $formattedDate",
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Text("Payment Mode: ${receipt.paymentMode ?: "N/A"}",
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Text("Collected By: ${receipt.paymentCollectedBy ?: "N/A"}",
+                                    color = MaterialTheme.colorScheme.onSurface)
+                                Text("Description: ${receipt.descriptionDetails ?: "N/A"}",
+                                    color = MaterialTheme.colorScheme.onSurface)
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                IconButton(onClick = {
-                                    try {
-                                        exportReceiptToPdf(context, receipt)
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    IconButton(onClick = {
+                                        try {
+                                            exportReceiptToPdf(context, receipt, organization)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }) {
+                                        Icon(
+                                            Icons.Default.FileDownload,
+                                            contentDescription = "Export to PDF",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
                                     }
-                                }) {
-                                    Icon(Icons.Default.FileDownload, contentDescription = "Export to PDF")
                                 }
                             }
                         }
@@ -321,30 +365,55 @@ fun MyReceiptsScreen(
 
 
 
-
-
-
-fun exportReceiptToPdf(context: Context, receipt: Donation) {
+// --- Single Receipt Export (with Header) ---
+// --- Receipt Export with Header ---
+fun exportReceiptToPdf(context: Context, receipt: Donation, org: Organization?) {
     val pdfDocument = PdfDocument()
     val pageInfo = PdfDocument.PageInfo.Builder(300, 600, 1).create()
     val page = pdfDocument.startPage(pageInfo)
 
     val canvas = page.canvas
-    val paint = Paint()
+    val paint = Paint().apply {
+        textSize = 12f
+        isFakeBoldText = true
+    }
+
+    var yPos = 20f
+
+    // --- Header Section ---
+    paint.textAlign = Paint.Align.CENTER
+    paint.textSize = 14f
+    canvas.drawText(org?.name ?: "Organization Name", pageInfo.pageWidth / 2f, yPos, paint)
 
     paint.textSize = 12f
-    canvas.drawText("Account: ${receipt.accountName ?: "N/A"}", 10f, 25f, paint)
-    canvas.drawText("Amount: ₹${receipt.amount ?: 0.0}", 10f, 50f, paint)
-    canvas.drawText("Category: ${receipt.categoryName ?: "N/A"}", 10f, 75f, paint)
+    yPos += 20f
+    canvas.drawText("Reg No: ${org?.registrationNumber ?: "N/A"}", pageInfo.pageWidth / 2f, yPos, paint)
 
-    // ✅ Format timestamp before drawing
+    yPos += 20f
+    canvas.drawText(org?.address ?: "Address not available", pageInfo.pageWidth / 2f, yPos, paint)
+
+    // reset for body
+    paint.textAlign = Paint.Align.LEFT
+    paint.isFakeBoldText = false
+    yPos += 30f
+
+    // --- Receipt Details ---
+    canvas.drawText("Account: ${receipt.accountName ?: "N/A"}", 10f, yPos, paint)
+    yPos += 20f
+    canvas.drawText("Amount: ₹${receipt.amount ?: 0.0}", 10f, yPos, paint)
+    yPos += 20f
+    canvas.drawText("Category: ${receipt.categoryName ?: "N/A"}", 10f, yPos, paint)
+    yPos += 20f
+
     val formattedDate = receipt.timestamp?.toDate()?.let {
         SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(it)
     } ?: "N/A"
-    canvas.drawText("Date: $formattedDate", 10f, 100f, paint)
+    canvas.drawText("Date: $formattedDate", 10f, yPos, paint)
+    yPos += 20f
 
-    canvas.drawText("Collected By: ${receipt.paymentCollectedBy ?: "N/A"}", 10f, 125f, paint)
-    canvas.drawText("Payment Mode: ${receipt.paymentMode ?: "N/A"}", 10f, 150f, paint)
+    canvas.drawText("Collected By: ${receipt.paymentCollectedBy ?: "N/A"}", 10f, yPos, paint)
+    yPos += 20f
+    canvas.drawText("Payment Mode: ${receipt.paymentMode ?: "N/A"}", 10f, yPos, paint)
 
     pdfDocument.finishPage(page)
 
@@ -352,7 +421,6 @@ fun exportReceiptToPdf(context: Context, receipt: Donation) {
     pdfDocument.writeTo(FileOutputStream(file))
     pdfDocument.close()
 
-    // Native share / print
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
     val shareIntent = Intent(Intent.ACTION_SEND).apply {
         type = "application/pdf"
@@ -361,6 +429,9 @@ fun exportReceiptToPdf(context: Context, receipt: Donation) {
     }
     context.startActivity(Intent.createChooser(shareIntent, "Share PDF"))
 }
+
+
+
 
 
 

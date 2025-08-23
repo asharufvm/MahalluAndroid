@@ -71,6 +71,8 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import com.google.accompanist.swiperefresh.SwipeRefresh
+import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
@@ -128,24 +130,15 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
     val loading: StateFlow<Boolean> = _loading
 
     init {
-        val phoneNumber = getUserMobileNumber()
-        if (phoneNumber != null) {
-            fetchUserProfile(phoneNumber)
-        }
+        getUserMobileNumber()?.let { fetchUserProfile(it) }
     }
 
-    /**
-     * ✅ Get phone number directly from FirebaseAuth session
-     */
     fun getUserMobileNumber(): String? {
         val number = auth.currentUser?.phoneNumber
         SessionManager.phoneNumber = number
         return number
     }
 
-    /**
-     * ✅ Fetch user profile using phoneNumber and update SessionManager
-     */
     fun fetchUserProfile(phoneNumber: String) {
         viewModelScope.launch {
             _loading.value = true
@@ -158,16 +151,12 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 if (!querySnapshot.isEmpty) {
                     val userDoc = querySnapshot.documents[0]
                     val profile = userDoc.toObject(UserProfile::class.java)
-
                     _userProfile.value = profile
 
-                    // ✅ Save session values globally
                     SessionManager.organizationId = userDoc.getString("organizationId")
                     SessionManager.role = userDoc.getString("role")
 
-                    // Fetch organization details too
                     SessionManager.organizationId?.let(::fetchOrganization)
-
                 } else {
                     _userProfile.value = null
                 }
@@ -180,9 +169,6 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /**
-     * ✅ Fetch organization details using SessionManager.organizationId
-     */
     fun fetchOrganization(organizationId: String) {
         viewModelScope.launch {
             try {
@@ -210,19 +196,20 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
     ) {
         viewModelScope.launch {
             _loading.value = true
-
             try {
+                val uid = auth.currentUser?.uid
                 val phoneNumber = getUserMobileNumber()
-                if (phoneNumber == null) {
+
+                if (uid == null || phoneNumber == null) {
                     onError("User not logged in")
                     return@launch
                 }
 
                 var imageUrl: String? = userProfile.value?.profileImageURL
 
-                // If a new image is selected, upload it
+                // ✅ Upload new image to Storage folder matching your rules
                 newImageUri?.let { uri ->
-                    val storageRef = storage.reference.child("profile_images/${auth.currentUser?.uid}.jpg")
+                    val storageRef = storage.reference.child("profileImages/$uid/profile.jpg") // matches rule
                     storageRef.putFile(uri).await()
                     imageUrl = storageRef.downloadUrl.await().toString()
                 }
@@ -235,6 +222,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                     "profileImageURL" to imageUrl
                 )
 
+                // Update Firestore
                 val querySnapshot = firestore.collection("users")
                     .whereEqualTo("phoneNumber", phoneNumber)
                     .get()
@@ -266,6 +254,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
 
 
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyProfileScreen(
@@ -278,128 +267,178 @@ fun MyProfileScreen(
     val organization by userViewModel.organization.collectAsState()
 
     val isOverallLoading = isLoading || organization == null
+    val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = isOverallLoading)
 
+    // Load profile if not yet loaded
+    LaunchedEffect(Unit) {
+        if (userProfile == null) {
+            userViewModel.getUserMobileNumber()?.let { phone ->
+                userViewModel.fetchUserProfile(phone)
+            }
+        }
+    }
+
+    // Everything inside composable scope → safe to use MaterialTheme
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         TopAppBar(
-            title = { Text("My Profile") },
+            title = {
+                Text(
+                    text = "My Profile",
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
             actions = {
-                IconButton(onClick = {
-                    navController.navigate("edit_profile")
-                }) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit Profile")
+                IconButton(onClick = { navController.navigate("edit_profile") }) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Profile",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
                 }
-            }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
         )
 
-        if (isOverallLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 16.dp,
-                    bottom = 80.dp // ✅ enough space so last item is not hidden under tab bar
-                )
-            ) {
-                // Organization Card
-                organization?.let { org ->
-                    item {
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 16.dp),
-                            elevation = CardDefaults.cardElevation(4.dp)
-                        ) {
-                            Column {
-                                Text(
-                                    buildAnnotatedString {
-                                        withStyle(style = ParagraphStyle(lineHeight = 40.sp)) {
-                                            withStyle(
-                                                style = SpanStyle(
-                                                    color = Color.Gray,
-                                                    fontSize = 18.sp,
-                                                    fontWeight = FontWeight.Normal
-                                                )
-                                            ) { append("Welcome to\n") }
-                                            withStyle(
-                                                style = SpanStyle(
-                                                    color = Color.Black,
-                                                    fontSize = 32.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            ) { append(org.name ?: "") }
-                                        }
-                                    },
-                                    modifier = Modifier.padding(16.dp)
+        SwipeRefresh(
+            state = swipeRefreshState,
+            onRefresh = {
+                userViewModel.getUserMobileNumber()?.let { phone ->
+                    userViewModel.fetchUserProfile(phone)
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        ) {
+            if (isOverallLoading) {
+                // ✅ Single center-aligned loader
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp)
+                ) {
+                    // Organization Card
+                    organization?.let { org ->
+                        item {
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp),
+                                elevation = CardDefaults.cardElevation(4.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
                                 )
+                            ) {
+                                Column {
+                                    Text(
+                                        buildAnnotatedString {
+                                            withStyle(style = ParagraphStyle(lineHeight = 40.sp)) {
+                                                withStyle(
+                                                    style = SpanStyle(
+                                                        //color = MaterialTheme.colorScheme.primary,
+                                                        fontSize = 18.sp,
+                                                        fontWeight = FontWeight.Normal
+                                                    )
+                                                ) { append("Welcome to\n") }
+                                                withStyle(
+                                                    style = SpanStyle(
+                                                        //color = MaterialTheme.colorScheme.onSurface,
+                                                        fontSize = 32.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                ) { append(org.name ?: "") }
+                                            }
+                                        },
+                                        modifier = Modifier.padding(16.dp)
+                                    )
 
-                                AsyncImage(
-                                    model = org.image,
-                                    contentDescription = null,
+                                    AsyncImage(
+                                        model = org.image,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(180.dp),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // User Profile Card
+                    userProfile?.let { profile ->
+                        item {
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                elevation = CardDefaults.cardElevation(4.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                )
+                            ) {
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(180.dp),
-                                    contentScale = ContentScale.Crop
-                                )
+                                        .padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    AsyncImage(
+                                        model = profile.profileImageURL.takeIf { !it.isNullOrEmpty() }
+                                            ?: R.drawable.placeholder_profile,
+                                        contentDescription = "User Profile Image",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(100.dp)
+                                            .clip(CircleShape)
+                                    )
+                                    Spacer(Modifier.height(12.dp))
+                                    val textColor = MaterialTheme.colorScheme.onSurface
+                                    Text("Name: ${profile.name ?: ""}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 26.sp,
+                                        color = textColor)
+                                    Text("Father's Name: ${profile.fatherName ?: ""}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor)
+                                    Text("House Name: ${profile.houseName ?: ""}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor)
+                                    Text("Address: ${profile.address ?: ""}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor)
+                                    Text("Phone: ${profile.phoneNumber ?: ""}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor)
+                                    Text("Class: ${profile.className ?: ""}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor)
+                                    Text("Role: ${profile.role ?: ""}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor)
+                                }
                             }
                         }
                     }
                 }
-
-                // User Profile Card
-                // User Profile Card
-                userProfile?.let { profile ->
-                    item {
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                            elevation = CardDefaults.cardElevation(4.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()  // ✅ make column take full width of card
-                                    .padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally, // ✅ center contents
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                AsyncImage(
-                                    model = profile.profileImageURL.takeIf { !it.isNullOrEmpty() }
-                                        ?: R.drawable.placeholder_profile,
-                                    contentDescription = "User Profile Image",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(100.dp)
-                                        .clip(CircleShape)
-                                )
-                                Spacer(Modifier.height(12.dp))
-                                Text("Name: ${profile.name ?: ""}", fontWeight = FontWeight.Bold, fontSize = 26.sp)
-                                Text("Father's Name: ${profile.fatherName ?: ""}", fontWeight = FontWeight.Bold)
-                                Text("House Name: ${profile.houseName ?: ""}", fontWeight = FontWeight.Bold)
-                                Text("Address: ${profile.address ?: ""}", fontWeight = FontWeight.Bold)
-                                Text("Phone: ${profile.phoneNumber ?: ""}", fontWeight = FontWeight.Bold)
-                                Text("Class: ${profile.className ?: ""}", fontWeight = FontWeight.Bold)
-                                Text("Role: ${profile.role ?: ""}", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-
             }
         }
     }
 }
+
+
+
 
 
 
@@ -425,7 +464,7 @@ fun EditProfileScreen(
 
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
 
-    // Launcher for image picker
+    // Image picker launcher
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -454,16 +493,19 @@ fun EditProfileScreen(
             )
         }
     ) { padding ->
-        Box(modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(MaterialTheme.colorScheme.background)
+        ) {
 
             if (isLoading) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
             } else {
                 Column(
@@ -472,20 +514,32 @@ fun EditProfileScreen(
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    AsyncImage(
-                        model = selectedImageUri ?: userProfile?.profileImageURL
-                        ?: ImageRequest.Builder(context)
-                            .data(R.drawable.placeholder_profile)
-                            .build(),
-                        contentDescription = "Profile Image",
+
+                    // Profile image area
+                    Box(
                         modifier = Modifier
                             .size(100.dp)
                             .clip(CircleShape)
-                            .clickable {
-                                imagePickerLauncher.launch("image/*")
-                            },
-                        contentScale = ContentScale.Crop
-                    )
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { imagePickerLauncher.launch("image/*") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (selectedImageUri != null || userProfile?.profileImageURL != null) {
+                            AsyncImage(
+                                model = selectedImageUri ?: userProfile?.profileImageURL,
+                                contentDescription = "Profile Image",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Default Profile Icon",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(50.dp)
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -496,6 +550,8 @@ fun EditProfileScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     OutlinedTextField(
                         value = fatherName,
                         onValueChange = { fatherName = it },
@@ -503,12 +559,16 @@ fun EditProfileScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     OutlinedTextField(
                         value = houseName,
                         onValueChange = { houseName = it },
                         label = { Text("House Name") },
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = address,
@@ -527,23 +587,31 @@ fun EditProfileScreen(
                                 houseName = houseName,
                                 address = address,
                                 newImageUri = selectedImageUri,
-                                onSuccess = {
-                                    onProfileUpdated()
-                                },
+                                onSuccess = { onProfileUpdated() },
                                 onError = {
-                                    Toast.makeText(context, "Failed: $it", Toast.LENGTH_SHORT).show()
+                                    Toast
+                                        .makeText(context, "Failed: $it", Toast.LENGTH_SHORT)
+                                        .show()
                                 }
                             )
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
                     ) {
-                        Text("Save")
+                        Text(
+                            "Save",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
                     }
                 }
             }
         }
     }
 }
+
 
 
 

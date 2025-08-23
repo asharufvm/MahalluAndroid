@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
+import androidx.compose.material3.TextFieldDefaults
 
 
 import android.content.Context
@@ -39,12 +40,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 import androidx.lifecycle.ViewModel
+import com.google.accompanist.swiperefresh.SwipeRefresh
+import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.functions.ktx.functions
 import com.google.firebase.ktx.Firebase
 import com.nextgenapps.Mahallu.Profile.SessionManager
-import com.nextgenapps.Mahallu.utils.CommonFunctions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -84,7 +86,6 @@ fun DonateNowScreen(
                     .setUrlBarHidingEnabled(false)
                     .setShareState(CustomTabsIntent.SHARE_STATE_OFF)
                     .build()
-
                 customTabsIntent.launchUrl(context, Uri.parse(url))
             } catch (e: Exception) {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
@@ -94,22 +95,27 @@ fun DonateNowScreen(
         }
     }
 
-    // ✅ No inner Scaffold
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.White)
-    ) {
-        // Top Bar
-        TopAppBar(title = { Text("Donate Now") })
+    val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = isLoading)
 
-        // Content
-        Box(modifier = Modifier.fillMaxSize()) {
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("Donate Now") })
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { innerPadding ->
+        SwipeRefresh(
+            state = swipeRefreshState,
+            onRefresh = { viewModel.fetchAccountsAndCategories() },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(MaterialTheme.colorScheme.background) // ✅ theme aware
+        ) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(bottom = 80.dp), // ✅ scroll under tab bar
+                contentPadding = PaddingValues(bottom = 80.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (isLoading) {
@@ -136,7 +142,8 @@ fun DonateNowScreen(
                                     expanded = viewModel.accountDropdownExpanded
                                 )
                             },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            colors = ExposedDropdownMenuDefaults.textFieldColors() // ✅ theme aware
                         )
                         ExposedDropdownMenu(
                             expanded = viewModel.accountDropdownExpanded,
@@ -174,7 +181,8 @@ fun DonateNowScreen(
                                     expanded = viewModel.categoryDropdownExpanded
                                 )
                             },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            colors = ExposedDropdownMenuDefaults.textFieldColors() // ✅ theme aware
                         )
                         ExposedDropdownMenu(
                             expanded = viewModel.categoryDropdownExpanded,
@@ -202,7 +210,14 @@ fun DonateNowScreen(
                         keyboardOptions = KeyboardOptions.Default.copy(
                             keyboardType = KeyboardType.Number
                         ),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.colors(
+                            focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                            unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                            focusedLabelColor = MaterialTheme.colorScheme.primary,
+                            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            cursorColor = MaterialTheme.colorScheme.primary
+                        )
                     )
                 }
 
@@ -235,6 +250,8 @@ fun DonateNowScreen(
 
 
 
+
+
 // -------------------- DonateNowViewModel.kt --------------------
 
 class DonateNowViewModel(application: Application) : AndroidViewModel(application) {
@@ -261,6 +278,13 @@ class DonateNowViewModel(application: Application) : AndroidViewModel(applicatio
         fetchAccounts()
         fetchCategories()
     }
+
+
+    fun fetchAccountsAndCategories() {
+        fetchAccounts()
+        fetchCategories()
+    }
+
 
     private fun fetchAccounts() {
         _isLoading.value = true

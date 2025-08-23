@@ -2,6 +2,7 @@ package com.nextgenapps.Mahallu.Login
 
 import android.app.Activity
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -37,6 +38,95 @@ import com.google.firebase.auth.PhoneAuthProvider
 import com.google.firebase.functions.functions
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
+
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.MaterialTheme
+
+
+@Composable
+fun EnterMobileScreen(
+    navController: NavHostController,
+    viewModel: EnterMobileViewModel = viewModel()
+) {
+    val context = LocalContext.current
+    val isValid = viewModel.mobileNumber.length == 10
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "Enter Mobile Number",
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            OutlinedTextField(
+                value = viewModel.mobileNumber,
+                onValueChange = { viewModel.onMobileNumberChange(it) },
+                label = { Text("Mobile Number") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            viewModel.errorMessage?.let {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (viewModel.isLoading) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            } else {
+                Button(
+                    onClick = {
+                        viewModel.checkAndSendOTP(
+                            activity = context as Activity,
+                            onOTPSent = { verificationId, phoneNumber ->
+                                navController.navigate("otp_screen/$verificationId/$phoneNumber")
+                            }
+                        )
+                    },
+                    enabled = isValid,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Continue",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+
 
 class EnterMobileViewModel : ViewModel() {
 
@@ -139,89 +229,3 @@ class EnterMobileViewModel : ViewModel() {
             }
     }
 }
-
-
-
-
-
-@Composable
-fun EnterMobileScreen(
-    navController: NavHostController,
-    viewModel: EnterMobileViewModel = viewModel()
-) {
-    val context = LocalContext.current
-    val isValid = viewModel.mobileNumber.length == 10
-
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Text(
-                text = "Enter Mobile Number",
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-
-            OutlinedTextField(
-                value = viewModel.mobileNumber,
-                onValueChange = { viewModel.onMobileNumberChange(it) },
-                label = { Text("Mobile Number") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // ✅ Center-aligned error message
-            viewModel.errorMessage?.let {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = it,
-                        color = MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (viewModel.isLoading) {
-                CircularProgressIndicator()
-            } else {
-                Button(
-                    onClick = {
-                        viewModel.checkAndSendOTP(
-                            activity = context as Activity,
-                            onOTPSent = { verificationId, phoneNumber ->
-                                navController.navigate("otp_screen/$verificationId/$phoneNumber")
-                            }
-                        )
-                    },
-                    enabled = isValid
-                ) {
-                    Text(
-                        text = "Continue",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    )
-                }
-            }
-        }
-    }
-}
-
-

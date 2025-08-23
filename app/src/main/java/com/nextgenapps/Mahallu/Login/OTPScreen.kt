@@ -3,6 +3,7 @@ package com.nextgenapps.Mahallu.Login
 import android.app.Activity
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -130,15 +131,25 @@ fun OTPScreen(
         resendAvailable = true
     }
 
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background), // dark mode safe background
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(16.dp)
+        ) {
             Text(
                 text = "Enter OTP sent to +91$mobileNumber",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(16.dp)
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(bottom = 16.dp)
             )
 
+            // ✅ OTP input field
             OutlinedTextField(
                 value = otp,
                 onValueChange = { input ->
@@ -146,13 +157,14 @@ fun OTPScreen(
                 },
                 label = { Text("OTP") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             if (viewModel.isVerifying) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             } else {
                 Button(
                     onClick = {
@@ -164,25 +176,41 @@ fun OTPScreen(
                             navController
                         )
                     },
-                    enabled = otp.length == 6
+                    enabled = otp.length == 6,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 ) {
-                    Text("Verify OTP")
+                    Text(
+                        text = "Verify OTP",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             if (!resendAvailable) {
-                Text("Resend available in ${String.format("%02d:%02d", countdown / 60, countdown % 60)}")
+                Text(
+                    text = "Resend available in ${String.format("%02d:%02d", countdown / 60, countdown % 60)}",
+                    color = MaterialTheme.colorScheme.onBackground
+                )
             } else {
                 if (isResending) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 } else {
                     TextButton(onClick = { /* Handle resend logic */ }) {
-                        Text("Resend OTP")
+                        Text(
+                            "Resend OTP",
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
         }
     }
 }
+
+

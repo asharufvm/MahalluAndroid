@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 //import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
@@ -40,11 +41,8 @@ fun SettingsScreen(navController: NavController) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(
-                start = 16.dp,
-                end = 16.dp,
-                top = 12.dp // ✅ small top space for consistency
-            )
+            .statusBarsPadding() // ✅ Add padding for status bar
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Text(
             "Settings",
@@ -88,6 +86,7 @@ fun SettingsScreen(navController: NavController) {
         )
     }
 }
+
 
 
 
