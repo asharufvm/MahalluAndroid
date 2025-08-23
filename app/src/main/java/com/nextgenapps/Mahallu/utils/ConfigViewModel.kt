@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings
+import com.nextgenapps.Mahallu.Profile.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -30,7 +31,19 @@ class ConfigViewModel(application: Application) : AndroidViewModel(application) 
     private val _isVersionBlocked = MutableStateFlow(false)
     val isVersionBlocked: StateFlow<Boolean> = _isVersionBlocked
 
+    // ✅ New: organization blocked state
+    private val _isOrganisationBlocked = MutableStateFlow(false)
+    val isOrganisationBlocked: StateFlow<Boolean> = _isOrganisationBlocked
+
     init {
+        // Observe _disabledOrgs to automatically update org blocked state
+        viewModelScope.launch {
+            _disabledOrgs.collect { disabledList ->
+                val orgId = SessionManager.organizationId
+                _isOrganisationBlocked.value = disabledList.contains(orgId)
+            }
+        }
+
         loadConfig()
     }
 
@@ -59,9 +72,15 @@ class ConfigViewModel(application: Application) : AndroidViewModel(application) 
             _isVersionBlocked.value = isAppOutdated(minSupportedVersion)
 
             val disabledOrgsJson = remoteConfig.getString("disabled_orgs")
-            _disabledOrgs.value = parseDisabledOrgs(disabledOrgsJson)
+            val disabledList = parseDisabledOrgs(disabledOrgsJson)
+            _disabledOrgs.value = disabledList
+
+            // ✅ Update organization blocked state here
+            val orgId = SessionManager.organizationId
+            _isOrganisationBlocked.value = disabledList.contains(orgId)
         }
     }
+
 
     private fun parseDisabledOrgs(jsonString: String): List<String> {
         return try {
@@ -101,4 +120,5 @@ class ConfigViewModel(application: Application) : AndroidViewModel(application) 
         return 0
     }
 }
+
 
