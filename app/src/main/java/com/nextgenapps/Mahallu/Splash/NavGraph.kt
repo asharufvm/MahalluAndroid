@@ -21,9 +21,10 @@ import com.nextgenapps.Mahallu.MyAccount.MyAccountScreen
 //import com.nextgenapps.Mahallu.Profile.EditProfileScreen
 import com.nextgenapps.Mahallu.Profile.EditProfileViewModel
 import com.nextgenapps.Mahallu.Profile.MyProfileScreen
+import com.nextgenapps.Mahallu.utils.ConfigViewModel
 
 @Composable
-fun AppNavHost() {
+fun AppNavHost(configViewModel: ConfigViewModel) {
     val navController = rememberNavController()
 
     NavHost(
@@ -55,7 +56,7 @@ fun AppNavHost() {
         }
 
         composable("home") {
-            HomeScreen()
+            HomeScreen(configViewModel)
         }
 
     }

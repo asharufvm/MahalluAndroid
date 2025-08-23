@@ -32,63 +32,76 @@ import com.nextgenapps.Mahallu.Settings.SettingsScreen
 import com.nextgenapps.Mahallu.MyReceipts.MyReceiptsScreen
 
 import com.nextgenapps.Mahallu.Profile.EditProfileScreen
+import com.nextgenapps.Mahallu.utils.ConfigViewModel
 
 
 @Composable
-fun HomeScreen() {
-    // Main NavControllers per tab
-    val profileNavController = rememberNavController()
-    val accountNavController = rememberNavController()
-    val donateNavController = rememberNavController()
-    val settingsNavController = rememberNavController()
+fun HomeScreen(configViewModel: ConfigViewModel) {
+    val isAppBlocked by configViewModel.isAppBlocked.collectAsState()
 
-    val tabs = listOf(
-        BottomTabItem("Profile", Icons.Default.Person, "profile_root"),
-        BottomTabItem("Account", Icons.Default.AccountCircle, "account_root"),
-        BottomTabItem("Donate", Icons.Filled.CurrencyRupee, "donate_root"),
-        BottomTabItem("Settings", Icons.Default.Settings, "settings_root")
-    )
+    if (isAppBlocked) {
+        // Show blocked screen
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("App is blocked!")
+        }
+    } else {
+        // Normal app content (your existing Scaffold)
+        val profileNavController = rememberNavController()
+        val accountNavController = rememberNavController()
+        val donateNavController = rememberNavController()
+        val settingsNavController = rememberNavController()
 
-    // Remember state per tab to avoid reloading
-    val saveableStateHolder = rememberSaveableStateHolder()
-    var selectedTab by rememberSaveable { mutableStateOf("profile_root") }
+        val tabs = listOf(
+            BottomTabItem("Profile", Icons.Default.Person, "profile_root"),
+            BottomTabItem("Account", Icons.Default.AccountCircle, "account_root"),
+            BottomTabItem("Donate", Icons.Filled.CurrencyRupee, "donate_root"),
+            BottomTabItem("Settings", Icons.Default.Settings, "settings_root")
+        )
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                tabs.forEach { tab ->
-                    NavigationBarItem(
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) },
-                        selected = selectedTab == tab.route,
-                        onClick = { selectedTab = tab.route }
-                    )
+        val saveableStateHolder = rememberSaveableStateHolder()
+        var selectedTab by rememberSaveable { mutableStateOf("profile_root") }
+
+        Scaffold(
+            bottomBar = {
+                NavigationBar {
+                    tabs.forEach { tab ->
+                        NavigationBarItem(
+                            icon = { Icon(tab.icon, contentDescription = tab.label) },
+                            label = { Text(tab.label) },
+                            selected = selectedTab == tab.route,
+                            onClick = { selectedTab = tab.route }
+                        )
+                    }
                 }
             }
-        }
-    ) { innerPadding ->
-        // Remove innerPadding or handle only bottom
-        Box(modifier = Modifier
-            .fillMaxSize()
-            .padding(bottom = innerPadding.calculateBottomPadding())
-        ) {
-            tabs.forEach { tab ->
-                val isSelected = tab.route == selectedTab
-                saveableStateHolder.SaveableStateProvider(tab.route) {
-                    if (isSelected) {
-                        when (tab.route) {
-                            "profile_root" -> ProfileTab(profileNavController)
-                            "account_root" -> AccountTab(accountNavController)
-                            "donate_root" -> DonateNowScreen()
-                            "settings_root" -> SettingsTab(settingsNavController)
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = innerPadding.calculateBottomPadding())
+            ) {
+                tabs.forEach { tab ->
+                    val isSelected = tab.route == selectedTab
+                    saveableStateHolder.SaveableStateProvider(tab.route) {
+                        if (isSelected) {
+                            when (tab.route) {
+                                "profile_root" -> ProfileTab(profileNavController)
+                                "account_root" -> AccountTab(accountNavController)
+                                "donate_root" -> DonateNowScreen()
+                                "settings_root" -> SettingsTab(settingsNavController)
+                            }
                         }
                     }
                 }
             }
         }
     }
-
 }
+
+
 
 // ----------------- Profile Tab -----------------
 @Composable
