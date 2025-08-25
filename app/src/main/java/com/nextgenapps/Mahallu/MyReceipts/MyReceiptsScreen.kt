@@ -94,6 +94,8 @@ data class Organization(
 // --- ViewModel ---
 class MyReceiptsViewModel(application: Application) : AndroidViewModel(application) {
 
+    var phoneNumber: String? = null
+
     private val _receipts = MutableStateFlow<List<Donation>>(emptyList())
     val receipts: StateFlow<List<Donation>> = _receipts
 
@@ -104,7 +106,11 @@ class MyReceiptsViewModel(application: Application) : AndroidViewModel(applicati
     val organization: StateFlow<Organization?> = _organization
 
     fun loadReceipts() {
-        val currentUserPhone = FirebaseAuth.getInstance().currentUser?.phoneNumber ?: return
+
+        val currentUserPhone = phoneNumber
+            ?: FirebaseAuth.getInstance().currentUser?.phoneNumber
+                    ?: return
+        //val currentUserPhone = FirebaseAuth.getInstance().currentUser?.phoneNumber ?: return
 
         _isLoading.value = true
 
@@ -240,6 +246,7 @@ fun exportAllReceiptsToPdf(context: Context, receipts: List<Donation>, organizat
 @Composable
 fun MyReceiptsScreen(
     navController: NavController,
+    phoneNumber: String? = null,
     viewModel: MyReceiptsViewModel = viewModel()
 ) {
     val receipts by viewModel.receipts.collectAsState()
@@ -248,6 +255,7 @@ fun MyReceiptsScreen(
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
+        viewModel.phoneNumber = phoneNumber
         viewModel.loadReceipts()
         viewModel.loadOrganization()
     }

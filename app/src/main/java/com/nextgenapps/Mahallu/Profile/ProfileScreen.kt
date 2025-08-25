@@ -103,6 +103,9 @@ data class Organization(
 object SessionManager {
     var phoneNumber: String? = null
     var organizationId: String? = null
+
+    var organizationName: String? = null
+
     var role: String? = null
 
     fun clear() {
@@ -154,6 +157,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                     _userProfile.value = profile
 
                     SessionManager.organizationId = userDoc.getString("organizationId")
+                    SessionManager.organizationName = userDoc.getString("name")
                     SessionManager.role = userDoc.getString("role")
 
                     SessionManager.organizationId?.let(::fetchOrganization)

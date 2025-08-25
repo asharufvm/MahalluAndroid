@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 
 
 import android.util.Log
+import android.widget.Toast
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.lifecycle.ViewModel
@@ -75,7 +76,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
-
+import com.google.firebase.firestore.FieldValue
 
 
 // MyAccountViewModel.kt
@@ -96,6 +97,7 @@ data class Due(
 // MyAccountViewModel.kt
 class MyAccountViewModel(application: Application) : AndroidViewModel(application) {
 
+    var phoneNumber: String? = null
     private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
     private val functions = FirebaseFunctions.getInstance("asia-south1")
@@ -122,7 +124,10 @@ class MyAccountViewModel(application: Application) : AndroidViewModel(applicatio
         val organizationId = getOrganizationId() ?: return
         val path = "/organizations/$organizationId/Dues"
 
-        val phone = auth.currentUser?.phoneNumber ?: return
+        val phone = phoneNumber
+            ?: auth.currentUser?.phoneNumber ?: return
+
+        //val phone = auth.currentUser?.phoneNumber ?: return
         _isLoading.value = true
         firestore.collection(path)
             .whereEqualTo("phoneNumber", phone)
@@ -186,6 +191,101 @@ class MyAccountViewModel(application: Application) : AndroidViewModel(applicatio
     fun getOrganizationId(): String? {
         return SessionManager.organizationId
     }
+
+    fun applyPayment(
+        mobileNumber: String,
+        paymentAmount: Double,
+        category: String,
+        description: String,
+        paymentMode: String,
+        onResult: (Boolean) -> Unit
+    ) {
+        val organizationId = getOrganizationId() ?: return onResult(false)
+        val duesRef = firestore.collection("/organizations/$organizationId/Dues")
+        val donationsRef = firestore.collection("/organizations/$organizationId/Donations")
+        val batch = firestore.batch()
+
+        duesRef
+            .whereEqualTo("phoneNumber", mobileNumber)
+            .whereEqualTo("type", "debit")
+            .whereIn("status", listOf("unpaid", "partial"))
+            .orderBy("date") // oldest first
+            .get()
+            .addOnSuccessListener { snapshot ->
+                if (snapshot.isEmpty) {
+                    Log.i("MyAccount", "ℹ️ No dues to apply payment")
+                    onResult(false)
+                    return@addOnSuccessListener
+                }
+
+                var remainingAmount = paymentAmount
+
+                for (doc in snapshot.documents) {
+                    if (remainingAmount <= 0) break
+
+                    val data = doc.data ?: continue
+                    val currentPaid = (data["paidAmount"] as? Number)?.toDouble() ?: 0.0
+                    val totalAmount = (data["amount"] as? Number)?.toDouble() ?: 0.0
+                    val dueRemaining = totalAmount - currentPaid
+                    if (dueRemaining <= 0) continue
+
+                    val payNow = minOf(remainingAmount, dueRemaining)
+                    val newPaidAmount = currentPaid + payNow
+                    val newStatus = if (newPaidAmount >= totalAmount) "paid" else "partial"
+
+                    // Update Due entry
+                    batch.update(doc.reference, mapOf(
+                        "paidAmount" to newPaidAmount,
+                        "status" to newStatus
+                    ))
+
+                    // Add matching entry in Donations
+                    val donationDoc = donationsRef.document()
+                    batch.set(donationDoc, mapOf(
+                        "accountName" to (data["accountName"] ?: "Mosque"),
+                        "amount" to payNow,
+                        "categoryName" to (data["category"] ?: ""),
+                        "phoneNumber" to mobileNumber,
+                        "timestamp" to FieldValue.serverTimestamp(),
+                        "type" to "credit",
+                        "userId" to mobileNumber,
+                        "paymentMode" to paymentMode,
+                        "paymentCollectedBy" to (SessionManager.phoneNumber ?: ""),
+                        "descriptionDetails" to "Due payment for user"
+                    ))
+
+                    remainingAmount -= payNow
+                }
+
+                // Add new Credit entry in Dues
+                val newCreditDoc = duesRef.document()
+                batch.set(newCreditDoc, mapOf(
+                    "phoneNumber" to mobileNumber,
+                    "amount" to paymentAmount,
+                    "type" to "credit",
+                    "category" to category,
+                    "description" to description,
+                    "status" to "done",
+                    "date" to FieldValue.serverTimestamp()
+                ))
+
+                // Commit batch
+                batch.commit()
+                    .addOnSuccessListener {
+                        Log.i("MyAccount", "✅ Payment applied successfully")
+                        onResult(true)
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("MyAccount", "❌ Failed to apply payment", e)
+                        onResult(false)
+                    }
+            }
+            .addOnFailureListener { e ->
+                Log.e("MyAccount", "❌ Error fetching dues", e)
+                onResult(false)
+            }
+    }
+
 }
 
 
@@ -196,6 +296,7 @@ class MyAccountViewModel(application: Application) : AndroidViewModel(applicatio
 @Composable
 fun MyAccountScreen(
     navController: NavHostController,
+    phoneNumber: String? = null,
     viewModel: MyAccountViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -208,8 +309,16 @@ fun MyAccountScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var editableDue by rememberSaveable { mutableStateOf("") }
 
+    // new: payment method state
+    var paymentMethod by rememberSaveable { mutableStateOf("Cash") }
+    val paymentOptions = listOf("Cash", "Online", "Payment Gateway")
+
+    // confirmation dialog state
+    var showConfirmDialog by remember { mutableStateOf(false) }
+
     // Load dues only if not loaded yet
     LaunchedEffect(Unit) {
+        viewModel.phoneNumber = phoneNumber
         if (transactions.isEmpty()) viewModel.loadDues()
     }
 
@@ -244,163 +353,265 @@ fun MyAccountScreen(
         }
     }
 
-    Column(
-        modifier = Modifier.background(MaterialTheme.colorScheme.background) // ✅ theme aware
-    ) {
-        TopAppBar(title = { Text("My Account", style = MaterialTheme.typography.titleLarge) })
-
-        Box(modifier = Modifier.weight(1f)) {
-            // ❌ Removed isRefreshing binding to avoid double loader
-            SwipeRefresh(
-                state = rememberSwipeRefreshState(isRefreshing = false),
-                onRefresh = { viewModel.loadDues() },
-                modifier = Modifier.fillMaxSize()
-            ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Total Due Card
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            elevation = CardDefaults.cardElevation(8.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            )
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .padding(16.dp)
-                                    .fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    "Total Due",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                    modifier = Modifier.wrapContentWidth(Alignment.CenterHorizontally)
-                                ) {
-                                    Text(
-                                        "₹",
-                                        fontSize = 28.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    BasicTextField(
-                                        value = editableDue,
-                                        onValueChange = { input ->
-                                            if (totalDue > 0) { // ✅ only allow edit if totalDue > 0
-                                                val clean = input.replace("[^\\d.]".toRegex(), "")
-                                                if (clean.toDoubleOrNull() != null || clean.isEmpty()) {
-                                                    editableDue = clean
-                                                }
-                                            }
-                                        },
-                                        textStyle = TextStyle(
-                                            fontSize = 28.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            textAlign = TextAlign.Center,
-                                            color = if (totalDue > 0) MaterialTheme.colorScheme.onSurface
-                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) // visually disabled
-                                        ),
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        modifier = Modifier
-                                            .widthIn(min = 100.dp)
-                                            .wrapContentWidth(Alignment.CenterHorizontally)
-                                            .background(Color.Transparent)
-                                    )
-                                }
-
-                                Divider(
-                                    modifier = Modifier.padding(top = 4.dp),
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                Button(
-                                    onClick = {
-                                        editableDue.toDoubleOrNull()?.let { amount ->
-                                            if (amount > 0) viewModel.donateNow(amount)
-                                        }
-                                    },
-                                    enabled = editableDue.toDoubleOrNull()?.let { it > 0 } == true && !isLoading
-                                ) {
-                                    Text("Pay Now")
-                                }
-                            }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("My Account", style = MaterialTheme.typography.titleLarge) },
+                navigationIcon = {
+                    // ✅ Show back only if phoneNumber was passed in
+                    if (phoneNumber != null) {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                         }
                     }
-
-                    // Transactions grouped by year
-                    val grouped = transactions.groupBy { due ->
-                        due.date?.toDate()?.let {
-                            SimpleDateFormat("yyyy", Locale.getDefault()).format(it)
-                        } ?: "Unknown"
-                    }
-
-                    grouped.forEach { (year, dues) ->
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                SwipeRefresh(
+                    state = rememberSwipeRefreshState(isRefreshing = false),
+                    onRefresh = { viewModel.loadDues() },
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Total Due Card
                         item {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                elevation = CardDefaults.cardElevation(4.dp),
+                                elevation = CardDefaults.cardElevation(8.dp),
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surface
                                 )
                             ) {
-                                Column {
+                                Column(
+                                    modifier = Modifier
+                                        .padding(16.dp)
+                                        .fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
                                     Text(
-                                        text = year,
+                                        "Total Due",
                                         style = MaterialTheme.typography.titleMedium.copy(
                                             fontWeight = FontWeight.Bold
                                         ),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                                            .padding(8.dp)
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
-                                    dues.forEachIndexed { index, transaction ->
-                                        TransactionItem(transaction) {
-                                            navController.navigate("transaction_detail/${transaction.id}")
-                                        }
-                                        if (index != dues.lastIndex) Divider(
-                                            color = MaterialTheme.colorScheme.outline
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
+                                        modifier = Modifier.wrapContentWidth(Alignment.CenterHorizontally)
+                                    ) {
+                                        Text(
+                                            "₹",
+                                            fontSize = 28.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        BasicTextField(
+                                            value = editableDue,
+                                            onValueChange = { input ->
+                                                if (totalDue > 0) {
+                                                    val clean = input.replace("[^\\d.]".toRegex(), "")
+                                                    if (clean.toDoubleOrNull() != null || clean.isEmpty()) {
+                                                        editableDue = clean
+                                                    }
+                                                }
+                                            },
+                                            textStyle = TextStyle(
+                                                fontSize = 28.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                textAlign = TextAlign.Center,
+                                                color = if (totalDue > 0) MaterialTheme.colorScheme.onSurface
+                                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                            ),
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            modifier = Modifier
+                                                .widthIn(min = 100.dp)
+                                                .wrapContentWidth(Alignment.CenterHorizontally)
+                                                .background(Color.Transparent)
+                                        )
+                                    }
+
+                                    Divider(
+                                        modifier = Modifier.padding(top = 4.dp),
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    // ✅ Normal Pay Now button
+                                    Button(
+                                        onClick = {
+                                            editableDue.toDoubleOrNull()?.let { amount ->
+                                                if (amount > 0) viewModel.donateNow(amount)
+                                            }
+                                        },
+                                        enabled = editableDue.toDoubleOrNull()?.let { it > 0 } == true && !isLoading
+                                    ) {
+                                        Text("Pay Now")
+                                    }
+
+                                    // ✅ Only show payment method + mark paid if phoneNumber provided
+                                    if (phoneNumber != null) {
+                                        Spacer(Modifier.height(16.dp))
+
+                                        // Payment method dropdown
+                                        var expanded by remember { mutableStateOf(false) }
+                                        ExposedDropdownMenuBox(
+                                            expanded = expanded,
+                                            onExpandedChange = { expanded = !expanded }
+                                        ) {
+                                            OutlinedTextField(
+                                                value = paymentMethod,
+                                                onValueChange = {},
+                                                label = { Text("Payment Method") },
+                                                readOnly = true,
+                                                trailingIcon = {
+                                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                                                },
+                                                modifier = Modifier
+                                                    .menuAnchor()
+                                                    .fillMaxWidth()
+                                            )
+                                            ExposedDropdownMenu(
+                                                expanded = expanded,
+                                                onDismissRequest = { expanded = false }
+                                            ) {
+                                                paymentOptions.forEach { option ->
+                                                    DropdownMenuItem(
+                                                        text = { Text(option) },
+                                                        onClick = {
+                                                            paymentMethod = option
+                                                            expanded = false
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(Modifier.height(12.dp))
+
+                                        Button(
+                                            onClick = { showConfirmDialog = true },
+                                            enabled = editableDue.toDoubleOrNull()?.let { it > 0 } == true
+                                        ) {
+                                            Text("Mark Dues as Paid")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Transactions grouped by year
+                        val grouped = transactions.groupBy { due ->
+                            due.date?.toDate()?.let {
+                                SimpleDateFormat("yyyy", Locale.getDefault()).format(it)
+                            } ?: "Unknown"
+                        }
+
+                        grouped.forEach { (year, dues) ->
+                            item {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    elevation = CardDefaults.cardElevation(4.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surface
+                                    )
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = year,
+                                            style = MaterialTheme.typography.titleMedium.copy(
+                                                fontWeight = FontWeight.Bold
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                .padding(8.dp)
+                                        )
+                                        dues.forEachIndexed { index, transaction ->
+                                            TransactionItem(transaction) {
+                                                navController.navigate("transaction_detail/${transaction.id}")
+                                            }
+                                            if (index != dues.lastIndex) Divider(
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            // ✅ Single overlay loader only
-            if (isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.3f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                // ✅ Loader
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.3f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    }
                 }
             }
         }
     }
+
+    // ✅ Confirmation dialog for mark as paid
+    if (showConfirmDialog && phoneNumber != null) {
+        AlertDialog(
+            onDismissRequest = { showConfirmDialog = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirmDialog = false
+                    val amount = editableDue.toDoubleOrNull() ?: return@TextButton
+                    viewModel.applyPayment(
+                        mobileNumber = phoneNumber,
+                        paymentAmount = amount,
+                        category = "Due Payment",
+                        description = "Marked as paid by admin",
+                        paymentMode = paymentMethod
+                    ) { success ->
+                        if (success) {
+                            Toast.makeText(context, "✅ Payment saved", Toast.LENGTH_SHORT).show()
+                            viewModel.loadDues()
+                        } else {
+                            Toast.makeText(context, "❌ Failed to save payment", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+            title = { Text("Confirm Payment") },
+            text = { Text("Are you sure you want to mark dues as paid?") }
+        )
+    }
 }
+
+
 
 
 

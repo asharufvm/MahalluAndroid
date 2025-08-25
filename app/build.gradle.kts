@@ -41,6 +41,8 @@ android {
 
 dependencies {
 
+    implementation("com.google.code.gson:gson:2.11.0")
+
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
 
     implementation("com.google.firebase:firebase-config-ktx")
